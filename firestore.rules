@@ -1,0 +1,191 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.uid;
+    }
+    function isAuthor() {
+      return isAuthenticated() && request.auth.uid == resource.data.authorUid;
+    }
+    function isAdmin() {
+      return isAuthenticated() && 
+        ((exists(/databases/$(database)/documents/user_profiles/$(request.auth.uid)) && 
+          get(/databases/$(database)/documents/user_profiles/$(request.auth.uid)).data.role == 'admin') ||
+         request.auth.token.email == "kayodeolufowobi709@gmail.com");
+    }
+    function uidUnchanged() {
+      return !('uid' in request.resource.data) || request.resource.data.uid == request.auth.uid;
+    }
+    function uidNotModified() {
+      return !('uid' in request.resource.data) || request.resource.data.uid == resource.data.uid;
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email']) &&
+             data.uid is string &&
+             data.email is string &&
+             data.email.size() < 256;
+    }
+    function isValidBookmark(data) {
+      return data.keys().hasAll(['uid', 'verseRef', 'text']) &&
+             data.uid is string &&
+             data.verseRef is string && data.verseRef.size() < 100 &&
+             data.text is string && data.text.size() < 2000;
+    }
+    function isValidHistory(data) {
+      return data.keys().hasAll(['uid', 'emotion']) &&
+             data.uid is string &&
+             data.emotion is string && data.emotion.size() < 500;
+    }
+
+    function isValidConcordance(data) {
+      return data.keys().hasAll(['uid', 'word', 'definition', 'language']) &&
+             data.uid is string &&
+             data.word is string && data.word.size() < 200 &&
+             data.definition is string && data.definition.size() < 5000 &&
+             data.language in ['Hebrew', 'Greek'];
+    }
+
+    function isValidReadingPlan(data) {
+      return data.keys().hasAll(['uid', 'title', 'description', 'category', 'days']) &&
+             data.uid is string &&
+             data.title is string && data.title.size() < 200 &&
+             data.description is string && data.description.size() < 2000 &&
+             data.category is string && data.category.size() < 100 &&
+             data.days is list && data.days.size() < 366;
+    }
+
+    function isValidForum(data) {
+      return data.keys().hasAll(['title', 'description']) &&
+             data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
+             data.description is string && data.description.size() < 5000;
+    }
+    function isValidThread(data) {
+      return data.keys().hasAll(['forumId', 'title', 'authorUid', 'createdAt', 'authorName', 'isAnonymous']) &&
+             data.forumId is string &&
+             data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
+             data.authorUid is string &&
+             data.authorName is string &&
+             data.isAnonymous is bool &&
+             data.createdAt is timestamp;
+    }
+    function isValidPost(data) {
+      return data.keys().hasAll(['threadId', 'content', 'authorUid', 'createdAt', 'authorName', 'isAnonymous']) &&
+             data.threadId is string &&
+             data.content is string && data.content.size() > 0 && data.content.size() < 5000 &&
+             data.authorUid is string &&
+             data.authorName is string &&
+             data.isAnonymous is bool &&
+             data.createdAt is timestamp;
+    }
+
+    // ===============================================================
+    // Routes
+    // ===============================================================
+    match /users/{uid} {
+      allow read: if isOwner(uid);
+      allow create: if isOwner(uid) && isValidUser(request.resource.data);
+      allow update: if isOwner(uid) && isValidUser(request.resource.data) && uidNotModified();
+    }
+
+    match /user_profiles/{uid} {
+      allow read: if isAuthenticated();
+      allow create: if isOwner(uid);
+      allow update: if isOwner(uid) || isAdmin();
+    }
+
+    match /bookmarks/{bookmarkId} {
+      allow read: if isDocOwner();
+      allow create: if isAuthenticated() && uidUnchanged() && isValidBookmark(request.resource.data);
+      allow delete: if isDocOwner();
+    }
+
+    match /history/{historyId} {
+      allow read: if isDocOwner();
+      allow create: if isAuthenticated() && uidUnchanged() && isValidHistory(request.resource.data);
+    }
+
+    match /custom_concordance/{entryId} {
+      allow read: if isDocOwner();
+      allow create: if isAuthenticated() && uidUnchanged() && isValidConcordance(request.resource.data);
+      allow update: if isDocOwner() && uidNotModified() && isValidConcordance(request.resource.data);
+      allow delete: if isDocOwner();
+    }
+
+    match /reading_plans/{planId} {
+      allow read: if isDocOwner();
+      allow create: if isAuthenticated() && uidUnchanged() && isValidReadingPlan(request.resource.data);
+      allow update: if isDocOwner() && uidNotModified() && isValidReadingPlan(request.resource.data);
+      allow delete: if isDocOwner();
+    }
+
+    function isValidPrayerRequest(data) {
+      return data.keys().hasAll(['content', 'createdAt', 'prayCount', 'authorUid', 'authorName', 'isAnonymous']) &&
+             data.content is string && data.content.size() > 0 && data.content.size() < 2000 &&
+             data.createdAt is timestamp &&
+             data.authorUid is string &&
+             data.authorName is string &&
+             data.isAnonymous is bool &&
+             data.prayCount is number && data.prayCount >= 0;
+    }
+
+    match /prayer_requests/{requestId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && isValidPrayerRequest(request.resource.data);
+      allow update: if isAuthenticated() && 
+                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['prayCount']) &&
+                    request.resource.data.prayCount == resource.data.prayCount + 1 &&
+                    getAfter(/databases/$(database)/documents/prayer_requests/$(requestId)/prayers/$(request.auth.uid)) != null;
+      allow delete: if isAuthor() || isAdmin();
+
+      match /prayers/{userId} {
+        allow read: if true;
+        allow create: if isOwner(userId) && !exists(/databases/$(database)/documents/prayer_requests/$(requestId)/prayers/$(userId));
+      }
+    }
+
+    match /forums/{forumId} {
+      allow read: if true;
+      allow create: if isAdmin();
+      allow delete: if isAdmin();
+      
+      match /threads/{threadId} {
+        allow read: if true;
+        allow create: if isAuthenticated() && isValidThread(request.resource.data);
+        allow delete: if isAuthor() || isAdmin();
+        
+        match /posts/{postId} {
+          allow read: if true;
+          allow create: if isAuthenticated() && isValidPost(request.resource.data);
+          allow delete: if isAuthor() || isAdmin();
+        }
+      }
+    }
+    function isValidNote(data) {
+      return data.keys().hasAll(['title', 'content', 'userId', 'updatedAt']) &&
+             data.title is string && data.title.size() < 500 &&
+             data.content is string && data.content.size() < 50000 &&
+             data.userId is string &&
+             data.updatedAt is timestamp;
+    }
+
+    match /notes/{noteId} {
+      allow read: if isAuthenticated() && request.auth.uid == resource.data.userId;
+      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.userId && isValidNote(request.resource.data);
+      allow update: if isAuthenticated() && request.auth.uid == resource.data.userId && request.auth.uid == request.resource.data.userId && isValidNote(request.resource.data);
+      allow delete: if isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+  }
+}

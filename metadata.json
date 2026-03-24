@@ -1,0 +1,5 @@
+{
+  "name": "The Bible Companion",
+  "description": "A quiet place for Scripture, encouragement, and peace during difficult moments. Interactive faith-based companion with AI-powered guidance, full Bible access, and daily devotionals.",
+  "requestFramePermissions": ["camera", "microphone", "geolocation"]
+}

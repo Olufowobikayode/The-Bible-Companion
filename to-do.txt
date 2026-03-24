@@ -1,0 +1,51 @@
+- [ ] Explore migrating backend to Supabase Auth + MongoDB Atlas
+- [ ] Explore implementing AI services with Gemini:
+  - [ ] Refactor all Gemini API calls to use `process.env.GEMINI_API_KEY`.
+  - [ ] Scripture Contextualizer: Provide historical/cultural context, translation comparisons, and theological synthesis for verses.
+  - [ ] Personalized Devotional: Generate daily devotionals tailored to the user's reading history, bookmarks, and notes.
+  - [ ] Prayer Companion: Draft prayers rooted in Scripture and suggest relevant verses for prayer requests.
+  - [ ] Forum Summarizer: Summarize forum threads and identify common questions.
+  - [ ] Notepad Dialogue: Enable users to chat with their notes for theological dialogue and actionable growth steps.
+- [ ] Implement AI Router (Caching + Groq/Gemini routing):
+  - [ ] Caching Layer: Implement a caching mechanism (e.g., using Supabase/Redis) to store previous AI responses and avoid redundant API calls.
+  - [ ] Routing Logic: Create a backend function to classify prompts as "simple" (e.g., moderation, summarization, grammar) or "complex" (e.g., theological synthesis, search grounding, original language analysis).
+  - [ ] Model Integration: Route simple tasks to Groq (using open-source models like Llama 3) to reduce Gemini quota usage, and reserve Gemini for complex, reasoning-heavy tasks.
+- [ ] Integrate YouTube Data API for Worship/Preaching streaming (View-only):
+  - [ ] API Setup: Configure the YouTube Data API to search for worship music and sermons from trusted ministries.
+  - [ ] Frontend Integration: Build a dedicated "Media" page in the app to display search results.
+  - [ ] Player Embedding: Use the `react-youtube` library or similar to embed the YouTube player for seamless streaming within the app.
+  - [ ] Alternative (RSS): Explore parsing RSS feeds for sermon podcasts as a secondary, player-customizable option.
+- [ ] Implement API-based fetching for canonical, non-canonical, concordance, and original language texts (replacing Gemini):
+  - [ ] Research & Select Repositories:
+    - [ ] Canonical: Use "Bible-API" (bible-api.com) or repositories like `scrollmapper/bible_databases` (JSON/SQL).
+    - [ ] Non-Canonical/Apocrypha: Use "Sefaria API" (sefaria.org) or repositories like `apocrypha-json` or `bible-json` projects.
+    - [ ] Concordance & Original Text: Use "Sefaria API" (for Hebrew/Greek roots and detailed concordance entries) or GitHub repositories like `openscriptures/morphhb` (Hebrew/Greek morphology).
+  - [ ] Integration: Update `src/lib/bible.ts` and `src/lib/gemini.ts` to fetch these texts directly from the chosen APIs/GitHub raw files.
+  - [ ] Caching: Implement local caching for these API responses to ensure offline access without relying on Firebase.
+- [ ] Upgrade AI Logic to "Wisdom, Theologian, Creator" Persona:
+  - [ ] Apply "Tri-Fold" Reasoning Framework (Analyze, Apply, Inspire) to all AI functions in `src/lib/gemini.ts`.
+  - [ ] Enforce "Curated Knowledge Base" Constraint: Explicitly instruct the AI to use ONLY canonical/non-canonical texts, Greek/Hebrew, Concordance, AND a strictly curated library of classic Christian literature.
+  - [ ] Prohibit General Internet Browsing: Explicitly forbid the AI from browsing the general internet for random articles or modern opinions.
+  - [ ] Elevate Linguistic Features: Update `getOriginalText` and `getConcordanceEntry` to provide not just linguistic data, but theological and spiritual revelation based on the new persona.
+- [ ] Curate Classic Theological Library:
+  - [ ] Identify and select high-quality, public-domain classic Christian works (e.g., Augustine, Luther, Calvin, etc.).
+  - [ ] Format and integrate these works into the app's knowledge base (similar to the non-canonical books strategy).
+- [ ] Production-Ready & Spiritual Productivity Features:
+  - [ ] Notifications: Implement push/in-app notifications for community engagement (e.g., "Someone prayed for you", "New reply").
+  - [ ] Semantic Search: Implement robust semantic search for Bible, notes, and forum content.
+  - [ ] Spiritual Growth Dashboard: Build a private dashboard tracking study consistency, thematic depth, and prayer engagement.
+  - [ ] Theological Milestones: Implement a system to celebrate study and prayer milestones with AI-generated reflection cards.
+- [ ] New Features Implementation (All Moderated by AI Guardian - TEXT ONLY):
+  - [ ] Enhanced Concordance: Build a search UI for Hebrew/Greek words using Sefaria/OpenScriptures APIs.
+  - [ ] Messaging Platform: Build a secure "Word for Someone" messaging system.
+  - [ ] Forum Enhancements: Add like/dislike and WhatsApp-style reply functionality.
+  - [ ] Testimony Section: Create a dedicated, moderated space for user testimonies with share tracking, comments, and specific emoji reactions (Hallelujah, Love, and pre-personalized community emojis).
+  - [ ] Friends & Social System: Implement a follow/unfollow system, user profiles (Instagram-style, no bio link), and follower/following counts.
+  - [ ] Group System: Implement public and private groups for prayer and study, with AI-moderated descriptions and content.
+  - [ ] Prayer Wall: Implement a structured prayer wall where users can post requests, "pray" (emoji), and "type a prayer" for others.
+  - [ ] Social Sharing: Enable sharing of studies, notes, and prayer points among friends and to external platforms (with AI-moderated outbound links).
+  - [ ] Video Prayer Rooms: Integrate Jitsi Meet API for free, secure group video calls for prayer (No user uploads).
+  - [ ] Daily Scripture Header: Implement a global header component that fetches and displays a new scripture daily.
+- [ ] Comprehensive AI Moderation (The "Guardian"):
+  - [ ] Enforce moderation on EVERY user-generated part: Forum, Messaging, Testimonies, Comments, Replies, Groups, Prayer Wall, and User Bios.
+  - [ ] Implement Layer 1 (Static Shield) and Layer 2 (AI Guardian) for all content.

@@ -1,0 +1,53 @@
+@import "tailwindcss";
+
+@theme {
+  --font-serif: "Playfair Display", serif;
+  --font-sans: "Inter", sans-serif;
+  --color-cream: #fdfbf7;
+  --color-sage: #8a9a5b;
+  --color-sage-light: #f1f4e8;
+  --color-sage-dark: #556b2f;
+  --color-ink: #2c3e50;
+  --color-destructive: #ef4444;
+}
+
+@utility safe-top {
+  padding-top: env(safe-area-inset-top);
+}
+
+@utility safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+@utility safe-left {
+  padding-left: env(safe-area-inset-left);
+}
+
+@utility safe-right {
+  padding-right: env(safe-area-inset-right);
+}
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:ital,wght@0,400;0,500;0,600;1,400&display=swap');
+
+body {
+  background-color: var(--color-cream);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.serif {
+  font-family: var(--font-serif);
+}
+
+.markdown-body p {
+  margin-bottom: 1rem;
+  line-height: 1.6;
+}
+
+.markdown-body blockquote {
+  border-left: 4px solid var(--color-sage);
+  padding-left: 1rem;
+  font-style: italic;
+  margin: 1rem 0;
+}
