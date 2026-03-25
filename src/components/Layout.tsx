@@ -2,11 +2,15 @@ import { ReactNode, useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { auth, signOut } from '../firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { Book, Heart, Home, MessageCircle, LogOut, Search, Menu, X, User as UserIcon, BookOpen, Languages, MessageSquare, Database, PenLine } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import { User as SupabaseUser } from '@supabase/supabase-js';
+import DailyScripture from './DailyScripture';
+import { Book, Heart, Home, MessageCircle, LogOut, Search, Menu, X, User as UserIcon, BookOpen, Languages, MessageSquare, Database, PenLine, Play, Activity, Send, Video, Music, LayoutDashboard, Sparkles, Compass, Calendar, Bookmark, Quote, Users, UserPlus, Hash, Sun } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import AuthModal from './AuthModal';
+import NotificationCenter from './NotificationCenter';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -17,7 +21,7 @@ interface LayoutProps {
 }
 
 export default function Layout({ children }: LayoutProps) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<SupabaseUser | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
@@ -27,8 +31,15 @@ export default function Layout({ children }: LayoutProps) {
   const [isGeminiMissing, setIsGeminiMissing] = useState(false);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
-      setUser(u);
+    // Initial session check
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      setIsAuthLoading(false);
+    });
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
       setIsAuthLoading(false);
     });
 
@@ -49,7 +60,7 @@ export default function Layout({ children }: LayoutProps) {
     }
 
     return () => {
-      unsubscribe();
+      subscription.unsubscribe();
       window.removeEventListener('online', handleOnlineStatus);
       window.removeEventListener('offline', handleOnlineStatus);
     };
@@ -57,39 +68,72 @@ export default function Layout({ children }: LayoutProps) {
 
   const handleLogout = async () => {
     try {
-      await signOut(auth);
+      await supabase.auth.signOut();
     } catch (error) {
       console.error('Logout failed:', error);
     }
   };
 
-  const navItems = [
-    { name: 'Home', path: '/', icon: Home },
-    { name: 'Bible', path: '/bible', icon: Book },
-    { name: 'Bookmarks', path: '/bookmarks', icon: Heart },
-    { name: 'Topics', path: '/topics', icon: Search },
-    { name: 'Plans', path: '/reading-plans', icon: BookOpen },
-    { name: 'Concordance', path: '/concordance', icon: Languages },
-    { name: 'Daily', path: '/daily', icon: Heart },
-    { name: 'Devotional', path: '/devotional', icon: Book },
-    { name: 'Companion', path: '/chat', icon: MessageCircle },
-    { name: 'Forum', path: '/forum', icon: MessageSquare },
-    { name: 'Study Journeys', path: '/study-journeys', icon: BookOpen },
-    { name: 'Prayer Wall', path: '/prayer-wall', icon: Heart },
-    { name: 'Notepad', path: '/notepad', icon: PenLine },
-    { name: 'Offline', path: '/offline', icon: Database },
+  const navGroups = [
+    {
+      title: 'The Word',
+      items: [
+        { name: 'Holy Bible', path: '/bible', icon: Book },
+        { name: 'Scripture Topics', path: '/topics', icon: Search },
+        { name: 'Reading Plans', path: '/reading-plans', icon: BookOpen },
+        { name: 'Biblical Concordance', path: '/concordance', icon: Languages },
+      ]
+    },
+    {
+      title: 'Spiritual Growth',
+      items: [
+        { name: 'Daily Bread', path: '/daily', icon: Heart },
+        { name: 'Devotionals', path: '/devotional', icon: Book },
+        { name: 'Holy Spirit Guidance', path: '/chat', icon: MessageCircle },
+        { name: 'Prayer Journal', path: '/notepad', icon: PenLine },
+        { name: 'Spiritual Dashboard', path: '/dashboard', icon: Activity },
+        { name: 'Study Journeys', path: '/study-journeys', icon: BookOpen },
+      ]
+    },
+    {
+      title: 'Fellowship',
+      items: [
+        { name: 'Community Tabernacle', path: '/forum', icon: MessageSquare },
+        { name: 'Cloud of Witnesses', path: '/testimonies', icon: Heart },
+        { name: 'Prayer Groups', path: '/groups', icon: UserIcon },
+        { name: 'Brethren', path: '/friends', icon: UserIcon },
+        { name: 'Word for Someone', path: '/messages', icon: Send },
+      ]
+    },
+    {
+      title: 'Intercession',
+      items: [
+        { name: 'Altar of Incense', path: '/prayer-wall', icon: Heart },
+        { name: 'Upper Room', path: '/prayer-rooms', icon: Video },
+      ]
+    },
+    {
+      title: 'Resources',
+      items: [
+        { name: 'Worship Sanctuary', path: '/media', icon: Play },
+        { name: 'Manna (Offline)', path: '/offline', icon: Database },
+      ]
+    }
   ];
+
+  const navItems = navGroups.flatMap(g => g.items);
 
   const bottomNavItems = [
     { name: 'Home', path: '/', icon: Home },
     { name: 'Bible', path: '/bible', icon: Book },
-    { name: 'Notepad', path: '/notepad', icon: PenLine },
+    { name: 'Companion', path: '/chat', icon: MessageCircle },
     { name: 'Prayer', path: '/prayer-wall', icon: Heart },
     { name: 'Forum', path: '/forum', icon: MessageSquare },
   ];
 
   return (
     <div className="min-h-screen flex flex-col bg-cream">
+      <DailyScripture />
       {(isFirebaseOffline || isGeminiMissing) && (
         <div className="bg-destructive text-white px-4 py-2 text-center text-[10px] sm:text-xs font-bold sticky top-0 z-[100] animate-pulse">
           {isFirebaseOffline && "Firebase is offline. Check your connection or configuration. "}
@@ -106,7 +150,7 @@ export default function Layout({ children }: LayoutProps) {
               <div className="w-9 h-9 md:w-11 md:h-11 bg-sage rounded-xl flex items-center justify-center text-white shadow-lg shadow-sage/20 group-hover:scale-105 transition-transform">
                 <Book className="w-5 h-5 md:w-6 md:h-6" />
               </div>
-              <span className="serif text-xl md:text-2xl font-bold text-sage-dark tracking-tight">The Bible Library</span>
+              <span className="serif text-xl md:text-2xl font-bold text-sage-dark tracking-tight">The Bible Companion</span>
             </Link>
 
             {/* Desktop Nav */}
@@ -128,11 +172,12 @@ export default function Layout({ children }: LayoutProps) {
                 <div className="w-24 h-10 bg-sage/5 animate-pulse rounded-xl" />
               ) : user ? (
                 <div className="flex items-center space-x-3 pl-2">
+                  <NotificationCenter />
                   <div className="flex flex-col items-end">
-                    <span className="text-xs font-bold text-ink/80 leading-none">{user.displayName}</span>
+                    <span className="text-xs font-bold text-ink/80 leading-none">{user.user_metadata?.full_name || user.email}</span>
                     <span className="text-[10px] text-sage font-bold uppercase tracking-widest mt-1">Member</span>
                   </div>
-                  <img src={user.photoURL || ''} alt="" className="w-10 h-10 rounded-xl border-2 border-white shadow-md" />
+                  <img src={user.user_metadata?.avatar_url || ''} alt="" className="w-10 h-10 rounded-xl border-2 border-white shadow-md" />
                   <button 
                     onClick={handleLogout} 
                     className="p-2 text-ink/30 hover:text-red-500 transition-colors hover:bg-red-50 rounded-lg"
@@ -153,6 +198,7 @@ export default function Layout({ children }: LayoutProps) {
 
             {/* Mobile Menu Toggle */}
             <div className="md:hidden flex items-center space-x-3">
+              {user && <NotificationCenter />}
               {isAuthLoading ? (
                 <div className="w-8 h-8 bg-sage/5 animate-pulse rounded-lg" />
               ) : user ? (
@@ -160,7 +206,7 @@ export default function Layout({ children }: LayoutProps) {
                   onClick={() => setIsMenuOpen(true)}
                   className="flex items-center space-x-2 p-1 pr-3 bg-white rounded-xl border border-sage/10 shadow-sm active:scale-95 transition-transform"
                 >
-                  <img src={user.photoURL || ''} alt="" className="w-8 h-8 rounded-lg border border-sage-light shadow-sm" />
+                  <img src={user.user_metadata?.avatar_url || ''} alt="" className="w-8 h-8 rounded-lg border border-sage-light shadow-sm" />
                   <Menu size={18} className="text-sage-dark" />
                 </button>
               ) : (
@@ -216,40 +262,45 @@ export default function Layout({ children }: LayoutProps) {
                   </button>
                 </div>
                 
-                <div className="flex-grow overflow-y-auto p-6 space-y-1">
+                <div className="flex-grow overflow-y-auto p-6 space-y-8">
                   {user && (
                     <div className="flex items-center space-x-4 p-4 bg-sage-light/10 rounded-3xl mb-6 border border-sage/5">
-                      <img src={user.photoURL || ''} alt="" className="w-14 h-14 rounded-full border-2 border-white shadow-md" />
+                      <img src={user.user_metadata?.avatar_url || ''} alt="" className="w-14 h-14 rounded-full border-2 border-white shadow-md" />
                       <div className="overflow-hidden">
-                        <p className="font-bold text-ink/80 truncate">{user.displayName}</p>
+                        <p className="font-bold text-ink/80 truncate">{user.user_metadata?.full_name || user.email}</p>
                         <p className="text-xs text-ink/40 truncate">{user.email}</p>
                       </div>
                     </div>
                   )}
                   
-                  <div className="grid grid-cols-1 gap-1">
-                    {navItems.map((item) => (
-                      <Link
-                        key={item.path}
-                        to={item.path}
-                        onClick={() => setIsMenuOpen(false)}
-                        className={cn(
-                          "flex items-center space-x-4 px-4 py-3.5 rounded-2xl text-base font-medium transition-all group",
-                          location.pathname === item.path 
-                            ? "bg-sage text-white shadow-lg shadow-sage/20" 
-                            : "text-ink/60 hover:bg-sage-light/10 hover:text-sage-dark"
-                        )}
-                      >
-                        <div className={cn(
-                          "p-2 rounded-xl transition-colors",
-                          location.pathname === item.path ? "bg-white/20" : "bg-sage-light/5 group-hover:bg-sage-light/20"
-                        )}>
-                          <item.icon className="w-5 h-5" />
-                        </div>
-                        <span>{item.name}</span>
-                      </Link>
-                    ))}
-                  </div>
+                  {navGroups.map((group) => (
+                    <div key={group.title} className="space-y-3">
+                      <h3 className="text-[10px] font-bold text-sage uppercase tracking-[0.2em] px-4">{group.title}</h3>
+                      <div className="grid grid-cols-1 gap-1">
+                        {group.items.map((item) => (
+                          <Link
+                            key={item.path}
+                            to={item.path}
+                            onClick={() => setIsMenuOpen(false)}
+                            className={cn(
+                              "flex items-center space-x-4 px-4 py-3.5 rounded-2xl text-base font-medium transition-all group",
+                              location.pathname === item.path 
+                                ? "bg-sage text-white shadow-lg shadow-sage/20" 
+                                : "text-ink/60 hover:bg-sage-light/10 hover:text-sage-dark"
+                            )}
+                          >
+                            <div className={cn(
+                              "p-2 rounded-xl transition-colors",
+                              location.pathname === item.path ? "bg-white/20" : "bg-sage-light/5 group-hover:bg-sage-light/20"
+                            )}>
+                              <item.icon className="w-5 h-5" />
+                            </div>
+                            <span>{item.name}</span>
+                          </Link>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
                 </div>
 
                 <div className="p-6 border-t border-sage/10 bg-white/50 space-y-4">
@@ -270,7 +321,7 @@ export default function Layout({ children }: LayoutProps) {
                     </button>
                   )}
                   <p className="text-[10px] text-center text-ink/30 uppercase tracking-[0.2em] font-medium">
-                    The Bible Library • v1.0
+                    The Bible Companion • v1.0
                   </p>
                 </div>
               </motion.div>
@@ -314,12 +365,12 @@ export default function Layout({ children }: LayoutProps) {
 
       <footer className="bg-cream border-t border-sage/10 py-12 mt-20 hidden md:block">
         <div className="max-w-7xl mx-auto px-4 text-center">
-          <p className="serif text-xl text-sage-dark mb-4">The Bible Library</p>
+          <p className="serif text-xl text-sage-dark mb-4">The Bible Companion</p>
           <p className="text-ink/40 text-sm max-w-md mx-auto">
-            A quiet place for Scripture, encouragement, and peace. Serving, guiding, and supporting respectfully.
+            A quiet place for Scripture, encouragement, and peace during difficult moments. Interactive faith-based companion with AI-powered guidance, full Bible access, and daily devotionals.
           </p>
           <div className="mt-8 pt-8 border-t border-sage/5 text-ink/30 text-xs">
-            © {new Date().getFullYear()} The Bible Library. All rights reserved.
+            © {new Date().getFullYear()} The Bible Companion. All rights reserved.
           </div>
         </div>
       </footer>

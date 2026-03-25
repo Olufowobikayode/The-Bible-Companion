@@ -1,6 +1,7 @@
 import { motion, AnimatePresence } from 'motion/react';
 import { X, LogIn } from 'lucide-react';
-import { auth, googleProvider, signInWithPopup } from '../firebase';
+import { supabase } from '../lib/supabase';
+import { toast } from 'sonner';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -10,10 +11,17 @@ interface AuthModalProps {
 export default function AuthModal({ isOpen, onClose }: AuthModalProps) {
   const handleGoogleSignIn = async () => {
     try {
-      await signInWithPopup(auth, googleProvider);
-      onClose();
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin
+        }
+      });
+      if (error) throw error;
+      // Note: signInWithOAuth redirects, so toast/onClose won't be seen immediately
     } catch (error) {
       console.error('Sign in failed:', error);
+      toast.error('Sign in failed. Please try again.');
     }
   };
 

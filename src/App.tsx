@@ -1,4 +1,5 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { Toaster } from 'sonner';
 import Layout from './components/Layout';
 import Home from './pages/Home';
 import Bible from './pages/Bible';
@@ -15,6 +16,14 @@ import Concordance from './pages/Concordance';
 import PrayerWall from './components/prayer/PrayerWall';
 import OfflineManager from './pages/OfflineManager';
 import Notepad from './pages/Notepad';
+import Testimonies from './pages/Testimonies';
+import Groups from './pages/Groups';
+import Friends from './pages/Friends';
+import Profile from './pages/Profile';
+import PrayerRooms from './pages/PrayerRooms';
+import Media from './pages/Media';
+import Dashboard from './pages/Dashboard';
+import Messages from './pages/Messages';
 
 export default function App() {
   return (
@@ -31,12 +40,21 @@ export default function App() {
           <Route path="/devotional" element={<Devotional />} />
           <Route path="/chat" element={<Chat />} />
           <Route path="/forum/*" element={<Forum />} />
+          <Route path="/testimonies" element={<Testimonies />} />
+          <Route path="/groups" element={<Groups />} />
+          <Route path="/friends" element={<Friends />} />
+          <Route path="/profile/:uid" element={<Profile />} />
+          <Route path="/media" element={<Media />} />
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/messages" element={<Messages />} />
           <Route path="/study-journeys" element={<StudyJourneys />} />
           <Route path="/prayer-wall" element={<PrayerWall />} />
+          <Route path="/prayer-rooms" element={<PrayerRooms />} />
           <Route path="/offline" element={<OfflineManager />} />
           <Route path="/notepad" element={<Notepad />} />
         </Routes>
       </Layout>
+      <Toaster position="top-center" richColors />
     </Router>
   );
 }

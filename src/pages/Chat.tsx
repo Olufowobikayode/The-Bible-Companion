@@ -1,11 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { askBibleQuestionStream, generateSpeech, transcribeAudio } from '../lib/gemini';
-import { Send, User, Sparkles, Loader2, Mic, Volume2 } from 'lucide-react';
+import { Send, User, Sparkles, Loader2, Mic, Volume2, MoreVertical, Phone, Video, ArrowLeft, Check, CheckCheck } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import { useLocation } from 'react-router-dom';
+import { useLocation, Link } from 'react-router-dom';
+import { format } from 'date-fns';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { toast } from 'sonner';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -14,19 +16,22 @@ function cn(...inputs: ClassValue[]) {
 interface Message {
   role: 'user' | 'assistant';
   content: string;
-  type?: 'text' | 'image' | 'video' | 'audio';
-  mediaUrl?: string;
+  timestamp: Date;
+  status?: 'sent' | 'delivered' | 'read';
 }
 
 export default function Chat() {
   const location = useLocation();
   const [messages, setMessages] = useState<Message[]>([
-    { role: 'assistant', content: "Hello! I'm your Bible Companion. How can I help you research the Word or find peace today? You can ask me questions about any book, including non-canonical ones like Enoch." }
+    { 
+      role: 'assistant', 
+      content: "Hello! I'm your Bible Companion. How can I help you research the Word or find peace today?",
+      timestamp: new Date()
+    }
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
-  const [scholarMode, setScholarMode] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const mediaRecorder = useRef<MediaRecorder | null>(null);
   const audioChunks = useRef<Blob[]>([]);
@@ -45,16 +50,32 @@ export default function Chat() {
     const textToSend = overrideInput || input;
     if (!textToSend.trim() || loading) return;
 
-    const userMsg: Message = { role: 'user', content: textToSend };
+    const userMsg: Message = { 
+      role: 'user', 
+      content: textToSend,
+      timestamp: new Date(),
+      status: 'sent'
+    };
+    
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     setLoading(true);
 
+    // Simulate message delivered/read status
+    setTimeout(() => {
+      setMessages(prev => {
+        const newMsgs = [...prev];
+        const lastUserMsg = newMsgs.filter(m => m.role === 'user').pop();
+        if (lastUserMsg) lastUserMsg.status = 'read';
+        return newMsgs;
+      });
+    }, 1000);
+
     let assistantContent = '';
-    setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
+    setMessages(prev => [...prev, { role: 'assistant', content: '', timestamp: new Date() }]);
 
     try {
-      const stream = askBibleQuestionStream(textToSend, scholarMode ? 'scholarly' : 'devotional');
+      const stream = askBibleQuestionStream(textToSend, 'devotional');
       for await (const chunk of stream) {
         assistantContent += chunk;
         setMessages(prev => {
@@ -65,7 +86,8 @@ export default function Chat() {
       }
     } catch (error) {
       console.error(error);
-      setMessages(prev => [...prev.slice(0, -1), { role: 'assistant', content: "I'm sorry, I encountered an error. Please try again." }]);
+      toast.error('Failed to get response.');
+      setMessages(prev => [...prev.slice(0, -1), { role: 'assistant', content: "I'm sorry, I encountered an error. Please try again.", timestamp: new Date() }]);
     } finally {
       setLoading(false);
     }
@@ -77,9 +99,12 @@ export default function Chat() {
       if (base64Audio) {
         const audio = new Audio(`data:audio/mp3;base64,${base64Audio}`);
         audio.play();
+      } else {
+        toast.error('Could not generate speech.');
       }
     } catch (error) {
       console.error('TTS failed:', error);
+      toast.error('Text-to-speech failed.');
     }
   };
 
@@ -101,6 +126,7 @@ export default function Chat() {
             handleSend(transcription);
           } catch (error) {
             console.error('Transcription failed:', error);
+            toast.error('Failed to transcribe audio.');
           } finally {
             setLoading(false);
           }
@@ -110,6 +136,7 @@ export default function Chat() {
       setIsRecording(true);
     } catch (error) {
       console.error('Microphone access denied:', error);
+      toast.error('Microphone access denied.');
     }
   };
 
@@ -119,100 +146,161 @@ export default function Chat() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-12 h-[80vh] flex flex-col">
-      <div className="text-center mb-8">
-        <h1 className="serif text-3xl font-semibold text-sage-dark">Interactive Companion</h1>
-        <div className="flex items-center justify-center gap-4 mt-2">
-          <p className="text-ink/40 text-sm">Research, ask, and find guidance with AI intelligence.</p>
-          <button
-            onClick={() => setScholarMode(!scholarMode)}
-            className={cn(
-              "text-[10px] uppercase tracking-widest px-3 py-1 rounded-full transition-all border",
-              scholarMode 
-                ? "bg-sage text-white border-sage" 
-                : "bg-white text-sage border-sage/20 hover:bg-sage-light"
-            )}
-          >
-            {scholarMode ? 'Scholar Mode Active' : 'Scholar Mode Off'}
-          </button>
+    <div className="max-w-3xl mx-auto h-[100dvh] md:h-[90vh] md:mt-8 flex flex-col bg-[#efeae2] md:rounded-3xl shadow-2xl overflow-hidden relative border border-gray-200">
+      {/* WhatsApp Chat Background Pattern */}
+      <div 
+        className="absolute inset-0 opacity-[0.06] pointer-events-none z-0"
+        style={{
+          backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23000000' fill-opacity='1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
+          backgroundSize: '120px'
+        }}
+      />
+
+      {/* WhatsApp Header */}
+      <div className="bg-[#008069] text-white px-4 py-3 flex items-center justify-between z-10 shadow-md">
+        <div className="flex items-center gap-3">
+          <Link to="/" className="md:hidden -ml-2 p-2 hover:bg-white/10 rounded-full transition-colors">
+            <ArrowLeft size={20} />
+          </Link>
+          <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
+            <Sparkles size={20} className="text-white" />
+          </div>
+          <div>
+            <h1 className="font-medium text-[17px] leading-tight">Bible Companion</h1>
+            <p className="text-[13px] text-white/80 leading-tight">
+              {loading ? 'typing...' : 'online'}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-4 text-white">
+          <button className="hover:bg-white/10 p-2 rounded-full transition-colors hidden sm:block"><Video size={20} /></button>
+          <button className="hover:bg-white/10 p-2 rounded-full transition-colors hidden sm:block"><Phone size={20} /></button>
+          <button className="hover:bg-white/10 p-2 rounded-full transition-colors"><MoreVertical size={20} /></button>
         </div>
       </div>
 
-      <div className="flex-grow bg-white rounded-[2rem] border border-sage/10 shadow-xl shadow-sage/5 overflow-hidden flex flex-col">
-        <div className="flex-grow overflow-y-auto p-6 space-y-6">
-          {messages.map((msg, i) => (
+      {/* Chat Area */}
+      <div className="flex-grow overflow-y-auto p-4 space-y-3 z-10">
+        <div className="flex justify-center mb-6">
+          <div className="bg-[#FFEECD] text-[#54656f] text-xs px-3 py-1.5 rounded-lg shadow-sm text-center max-w-[80%]">
+            Messages are end-to-end encrypted. No one outside of this chat, not even WhatsApp, can read or listen to them. Click to learn more.
+          </div>
+        </div>
+
+        {messages.map((msg, i) => {
+          const isUser = msg.role === 'user';
+          return (
             <motion.div
               key={i}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}
             >
-              <div className={`flex gap-3 max-w-[85%] ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-                  msg.role === 'user' ? 'bg-sage text-white' : 'bg-sage-light text-sage-dark'
-                }`}>
-                  {msg.role === 'user' ? <User size={16} /> : <Sparkles size={16} />}
+              <div 
+                className={cn(
+                  "max-w-[85%] sm:max-w-[75%] rounded-lg px-3 pt-2 pb-1.5 relative shadow-sm",
+                  isUser ? "bg-[#d9fdd3] rounded-tr-none" : "bg-white rounded-tl-none"
+                )}
+              >
+                {/* Chat Bubble Tail */}
+                <div className={cn(
+                  "absolute top-0 w-3 h-3",
+                  isUser 
+                    ? "-right-2 bg-[#d9fdd3] [clip-path:polygon(0_0,0%_100%,100%_0)]" 
+                    : "-left-2 bg-white [clip-path:polygon(100%_0,0_0,100%_100%)]"
+                )} />
+
+                <div className="markdown-body text-[15px] leading-[22px] text-[#111b21]">
+                  <ReactMarkdown>{msg.content}</ReactMarkdown>
                 </div>
-                <div className={`p-4 rounded-2xl relative group ${
-                  msg.role === 'user' 
-                    ? 'bg-sage text-white rounded-tr-none' 
-                    : 'bg-cream text-ink/80 rounded-tl-none border border-sage/5'
-                }`}>
-                  <div className="markdown-body">
-                    <ReactMarkdown>{msg.content}</ReactMarkdown>
-                  </div>
-                  {msg.role === 'assistant' && (
+                
+                <div className="flex items-center justify-end gap-1 mt-1 -mb-1">
+                  {!isUser && (
                     <button 
                       onClick={() => handleTTS(msg.content)}
-                      className="absolute -right-8 top-0 opacity-0 group-hover:opacity-100 transition-opacity text-sage hover:text-sage-dark"
+                      className="text-gray-400 hover:text-[#008069] transition-colors mr-1"
+                      title="Read aloud"
                     >
-                      <Volume2 size={16} />
+                      <Volume2 size={14} />
                     </button>
+                  )}
+                  <span className="text-[11px] text-[#667781] leading-none">
+                    {format(msg.timestamp, 'HH:mm')}
+                  </span>
+                  {isUser && (
+                    <span className="text-[#53bdeb] ml-0.5">
+                      {msg.status === 'read' ? <CheckCheck size={14} /> : <Check size={14} className="text-[#667781]" />}
+                    </span>
                   )}
                 </div>
               </div>
             </motion.div>
-          ))}
-          {loading && (
-            <div className="flex justify-start">
-              <div className="bg-cream p-4 rounded-2xl rounded-tl-none border border-sage/5 flex items-center gap-2">
-                <Loader2 className="w-4 h-4 animate-spin text-sage" />
-                <span className="text-sm text-ink/40 italic">Companion is thinking...</span>
+          );
+        })}
+        {loading && (
+          <div className="flex justify-start">
+            <div className="bg-white rounded-lg rounded-tl-none px-4 py-3 shadow-sm relative">
+              <div className="absolute top-0 -left-2 w-3 h-3 bg-white [clip-path:polygon(100%_0,0_0,100%_100%)]" />
+              <div className="flex gap-1.5 items-center h-5">
+                <motion.div animate={{ y: [0, -5, 0] }} transition={{ repeat: Infinity, duration: 0.6, delay: 0 }} className="w-1.5 h-1.5 bg-gray-400 rounded-full" />
+                <motion.div animate={{ y: [0, -5, 0] }} transition={{ repeat: Infinity, duration: 0.6, delay: 0.2 }} className="w-1.5 h-1.5 bg-gray-400 rounded-full" />
+                <motion.div animate={{ y: [0, -5, 0] }} transition={{ repeat: Infinity, duration: 0.6, delay: 0.4 }} className="w-1.5 h-1.5 bg-gray-400 rounded-full" />
               </div>
             </div>
-          )}
-          <div ref={scrollRef} />
-        </div>
-
-        <div className="p-6 border-t border-sage/10 bg-sage-light/30">
-          <div className="flex gap-3">
-            <div className="flex-grow relative">
-              <textarea
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSend())}
-                placeholder="Ask a question or research a book..."
-                className="w-full bg-white border border-sage/20 rounded-2xl px-4 py-3 pr-12 focus:outline-none focus:border-sage resize-none h-14"
-              />
-              <div className="absolute right-3 bottom-3 flex gap-2">
-                <button 
-                  onMouseDown={startRecording}
-                  onMouseUp={stopRecording}
-                  className={`transition-colors ${isRecording ? 'text-red-500' : 'text-ink/30 hover:text-sage'}`}
-                >
-                  <Mic size={18} />
-                </button>
-              </div>
-            </div>
-            <button
-              onClick={() => handleSend()}
-              disabled={loading || !input.trim()}
-              className="bg-sage text-white p-4 rounded-2xl hover:bg-sage-dark transition-all disabled:opacity-50 shadow-lg shadow-sage/20"
-            >
-              <Send size={20} />
-            </button>
           </div>
+        )}
+        <div ref={scrollRef} />
+      </div>
+
+      {/* WhatsApp Input Area */}
+      <div className="bg-[#f0f2f5] px-4 py-3 flex items-end gap-2 z-10">
+        <div className="flex-grow bg-white rounded-2xl flex items-end px-2 py-1 shadow-sm border border-transparent focus-within:border-gray-300 transition-colors">
+          <button className="p-2 text-[#54656f] hover:bg-gray-100 rounded-full transition-colors mb-0.5">
+            <Sparkles size={22} />
+          </button>
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSend();
+              }
+            }}
+            placeholder="Type a message"
+            className="flex-grow bg-transparent border-none focus:ring-0 resize-none max-h-32 min-h-[40px] py-2.5 px-2 text-[15px] leading-5 text-[#111b21]"
+            rows={1}
+            style={{ height: 'auto' }}
+            onInput={(e) => {
+              const target = e.target as HTMLTextAreaElement;
+              target.style.height = 'auto';
+              target.style.height = `${Math.min(target.scrollHeight, 120)}px`;
+            }}
+          />
         </div>
+        
+        {input.trim() ? (
+          <button
+            onClick={() => handleSend()}
+            disabled={loading}
+            className="bg-[#00a884] text-white p-3 rounded-full hover:bg-[#008f6f] transition-colors shadow-sm flex-shrink-0 mb-0.5"
+          >
+            <Send size={20} className="ml-0.5" />
+          </button>
+        ) : (
+          <button
+            onMouseDown={startRecording}
+            onMouseUp={stopRecording}
+            onTouchStart={startRecording}
+            onTouchEnd={stopRecording}
+            className={cn(
+              "p-3 rounded-full transition-colors shadow-sm flex-shrink-0 mb-0.5",
+              isRecording ? "bg-red-500 text-white animate-pulse" : "bg-[#00a884] text-white hover:bg-[#008f6f]"
+            )}
+          >
+            <Mic size={20} />
+          </button>
+        )}
       </div>
     </div>
   );

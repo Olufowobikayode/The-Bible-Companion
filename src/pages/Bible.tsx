@@ -11,6 +11,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import ReactMarkdown from 'react-markdown';
+import { toast } from 'sonner';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -78,12 +79,31 @@ export default function Bible() {
   };
 
   const handleSemanticSearch = async () => {
-    if (!searchQuery.trim() || !content) return;
+    if (!searchQuery.trim()) return;
     setLoadingSemantic(true);
-    const chapterText = content.verses.map((v: any) => `${v.verse}: ${v.text}`).join('\n');
-    const results = await performSemanticSearch(searchQuery, chapterText);
-    setSemanticResults(results);
-    setLoadingSemantic(false);
+    try {
+      if (content) {
+        const chapterText = content.verses.map((v: any) => `${v.verse}: ${v.text}`).join('\n');
+        const results = await performSemanticSearch(searchQuery, chapterText);
+        setSemanticResults(results);
+        if (results.length === 0) {
+          toast.info("No specific matches found in this chapter. Try a broader search.");
+        }
+      } else {
+        // Global search if no chapter is loaded (though one usually is)
+        const result = await performSemanticSearch(searchQuery);
+        if (result.verses && result.verses.length > 0) {
+          // Navigate to the first result? Or show a list?
+          // For now, let's just toast the first reference
+          toast.info(`Top match: ${result.verses[0]}`);
+        }
+      }
+    } catch (error) {
+      console.error("Semantic search failed:", error);
+      toast.error("Failed to perform AI search.");
+    } finally {
+      setLoadingSemantic(false);
+    }
   };
 
   const handleSyncBook = async () => {
@@ -124,7 +144,7 @@ export default function Bible() {
 
   const handleBookmark = async (verse: any) => {
     if (!auth.currentUser) {
-      alert('Please sign in to bookmark verses.');
+      toast.error('Please sign in to bookmark verses.');
       return;
     }
 
@@ -135,6 +155,7 @@ export default function Bible() {
     try {
       if (existingBookmarkId) {
         await deleteDoc(doc(db, 'bookmarks', existingBookmarkId));
+        toast.success('Bookmark removed');
       } else {
         await addDoc(collection(db, 'bookmarks'), {
           uid: auth.currentUser.uid,
@@ -143,9 +164,11 @@ export default function Bible() {
           translation,
           createdAt: new Date().toISOString()
         });
+        toast.success('Verse bookmarked');
       }
     } catch (error) {
       console.error('Failed to toggle bookmark:', error);
+      toast.error('Failed to update bookmark');
     }
   };
 
@@ -160,7 +183,7 @@ export default function Bible() {
         await navigator.share(shareData);
       } else {
         await navigator.clipboard.writeText(window.location.href);
-        alert('Link copied to clipboard!');
+        toast.success('Link copied to clipboard!');
       }
     } catch (err) {
       console.error('Share failed:', err);
@@ -430,6 +453,29 @@ export default function Bible() {
                               className="w-4 h-4" 
                               fill={userBookmarks[`${book} ${chapter}:${v.verse}_${translation}`] ? "currentColor" : "none"} 
                             />
+                          </button>
+                          <button
+                            onClick={async () => {
+                              const shareText = `"${v.text}" — ${book} ${chapter}:${v.verse} (${translation})`;
+                              try {
+                                if (navigator.share) {
+                                  await navigator.share({
+                                    title: 'Bible Verse Share',
+                                    text: shareText,
+                                    url: window.location.href
+                                  });
+                                } else {
+                                  await navigator.clipboard.writeText(shareText);
+                                  toast.success('Verse copied to clipboard!');
+                                }
+                              } catch (err) {
+                                console.error('Share failed:', err);
+                              }
+                            }}
+                            className="opacity-100 sm:opacity-0 group-hover:opacity-100 p-2 text-sage hover:text-sage-dark transition-all"
+                            title="Share Verse"
+                          >
+                            <Share2 className="w-4 h-4" />
                           </button>
                         </div>
                       </div>

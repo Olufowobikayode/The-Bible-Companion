@@ -5,6 +5,7 @@ import { collection, query, where, onSnapshot, deleteDoc, doc } from 'firebase/f
 import { Bookmark as BookmarkIcon, Trash2, Loader2, BookOpen } from 'lucide-react';
 import { Bookmark } from '../types';
 import { Link } from 'react-router-dom';
+import { toast } from 'sonner';
 
 export default function Bookmarks() {
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
@@ -39,8 +40,10 @@ export default function Bookmarks() {
   const handleDelete = async (id: string) => {
     try {
       await deleteDoc(doc(db, 'bookmarks', id));
+      toast.success('Bookmark removed');
     } catch (error) {
       console.error('Delete failed:', error);
+      toast.error('Failed to remove bookmark');
     }
   };
 

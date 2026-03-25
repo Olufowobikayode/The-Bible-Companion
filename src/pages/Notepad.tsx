@@ -3,9 +3,12 @@ import { motion, AnimatePresence } from 'motion/react';
 import { db, auth } from '../firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { collection, query, where, orderBy, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
-import { PenLine, Trash2, Sparkles, Save, Plus, ChevronRight, Loader2, BookOpen } from 'lucide-react';
+import { PenLine, Trash2, Sparkles, Save, Plus, ChevronRight, Loader2, BookOpen, Share2 } from 'lucide-react';
 import { analyzeNote } from '../lib/gemini';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
+
+import { moderateContent } from '../lib/moderation';
 
 interface Note {
   id: string;
@@ -93,8 +96,16 @@ export default function Notepad() {
     };
 
     try {
+      // Moderate note content
+      const moderationResult = await moderateContent(content);
+      if (!moderationResult.isApproved) {
+        toast.error(`Note rejected: ${moderationResult.reason}`);
+        return;
+      }
+
       if (selectedNote) {
         await updateDoc(doc(db, 'notes', selectedNote.id), noteData);
+        toast.success('Note updated successfully.');
       } else {
         const docRef = await addDoc(collection(db, 'notes'), {
           ...noteData,
@@ -106,10 +117,12 @@ export default function Notepad() {
           ...noteData,
           createdAt: new Date(),
         } as any);
+        toast.success('Note created successfully.');
       }
       setIsEditing(false);
     } catch (error) {
       console.error("Failed to save note", error);
+      toast.error('Failed to save note.');
     }
   };
 
@@ -128,8 +141,10 @@ export default function Notepad() {
         setSelectedNote(null);
         setIsEditing(false);
       }
+      toast.success('Note deleted successfully.');
     } catch (error) {
       console.error("Failed to delete note", error);
+      toast.error('Failed to delete note.');
     }
   };
 
@@ -154,6 +169,7 @@ export default function Notepad() {
         setSelectedNote({ id: docRef.id, ...noteData, createdAt: new Date() } as any);
       } catch (error) {
         console.error("Failed to save note before analysis", error);
+        toast.error('Failed to save note before analysis.');
         return;
       }
     }
@@ -166,9 +182,11 @@ export default function Notepad() {
           aiAnalysis: analysis,
           updatedAt: serverTimestamp()
         });
+        toast.success('Smart Assist analysis complete.');
       }
     } catch (error) {
       console.error("AI Analysis failed", error);
+      toast.error('AI Analysis failed.');
     } finally {
       setIsAnalyzing(false);
     }
@@ -242,9 +260,14 @@ export default function Notepad() {
                   }`}
                 >
                   <h3 className="font-bold truncate pr-8">{note.title}</h3>
-                  <p className={`text-xs mt-1 truncate ${selectedNote?.id === note.id ? 'text-white/70' : 'text-ink/40'}`}>
-                    {note.content}
-                  </p>
+                  <div className="flex items-center justify-between mt-1">
+                    <p className={`text-xs truncate flex-1 ${selectedNote?.id === note.id ? 'text-white/70' : 'text-ink/40'}`}>
+                      {note.content}
+                    </p>
+                    <span className={`text-[10px] font-medium ml-2 shrink-0 ${selectedNote?.id === note.id ? 'text-white/40' : 'text-ink/20'}`}>
+                      {note.updatedAt?.toDate?.() ? note.updatedAt.toDate().toLocaleDateString() : new Date(note.updatedAt).toLocaleDateString()}
+                    </span>
+                  </div>
                   <button 
                     onClick={(e) => handleDelete(note.id, e)}
                     className={`absolute top-4 right-4 p-1 rounded-lg transition-colors ${
@@ -336,6 +359,30 @@ export default function Notepad() {
                       >
                         {isAnalyzing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles size={18} />}
                         <span>Smart Assist</span>
+                      </button>
+                      <button 
+                        onClick={async () => {
+                          if (!selectedNote) return;
+                          const shareText = `Note: ${selectedNote.title}\n\n${selectedNote.content}`;
+                          try {
+                            if (navigator.share) {
+                              await navigator.share({
+                                title: selectedNote.title,
+                                text: shareText,
+                                url: window.location.href
+                              });
+                            } else {
+                              await navigator.clipboard.writeText(shareText);
+                              toast.success('Note copied to clipboard!');
+                            }
+                          } catch (err) {
+                            console.error('Share failed:', err);
+                          }
+                        }}
+                        className="p-2.5 text-ink/40 hover:text-sage transition-colors"
+                        title="Share Note"
+                      >
+                        <Share2 size={20} />
                       </button>
                       <button 
                         onClick={() => setIsEditing(true)}

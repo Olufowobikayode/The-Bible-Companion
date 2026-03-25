@@ -4,6 +4,7 @@ import { fetchBibleVerse } from '../lib/bible';
 import { Heart, Share2, Bookmark, Loader2, Sparkles } from 'lucide-react';
 import { db, auth } from '../firebase';
 import { collection, addDoc } from 'firebase/firestore';
+import { toast } from 'sonner';
 
 const DAILY_VERSES = [
   "Lamentations 3:22-23", "Psalm 118:24", "Isaiah 40:31", "Philippians 4:13", "Psalm 23:1", "Proverbs 3:5-6", "John 14:27"
@@ -28,7 +29,10 @@ export default function Daily() {
   };
 
   const handleBookmark = async () => {
-    if (!auth.currentUser) return alert('Please sign in to bookmark.');
+    if (!auth.currentUser) {
+      toast.error('Please sign in to bookmark.');
+      return;
+    }
     try {
       await addDoc(collection(db, 'bookmarks'), {
         uid: auth.currentUser.uid,
@@ -37,9 +41,10 @@ export default function Daily() {
         translation: 'KJV',
         createdAt: new Date().toISOString()
       });
-      alert('Bookmarked!');
+      toast.success('Bookmarked!');
     } catch (error) {
       console.error(error);
+      toast.error('Failed to bookmark.');
     }
   };
 

@@ -7,6 +7,7 @@ import { db, auth } from '../firebase';
 import { collection, addDoc, query, where, onSnapshot, orderBy } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
 import { db_local } from '../lib/db';
+import { toast } from 'sonner';
 
 interface ConcordanceResult {
   word: string;
@@ -99,6 +100,7 @@ export default function Concordance() {
       }
     } catch (error) {
       console.error('Concordance search failed:', error);
+      toast.error('Failed to search concordance.');
     } finally {
       setLoading(false);
     }
@@ -115,16 +117,17 @@ export default function Concordance() {
       setSyncProgress({ current: i + 1, total: COMMON_WORDS.length });
     }
     setTimeout(() => setSyncProgress(null), 3000);
+    toast.success('Common words synced for offline use.');
   };
 
   const handleAddCustom = async () => {
     if (!auth.currentUser) {
-      alert('Please sign in to add custom entries.');
+      toast.error('Please sign in to add custom entries.');
       return;
     }
 
     if (!newEntry.word || !newEntry.definition) {
-      alert('Word and Definition are required.');
+      toast.error('Word and Definition are required.');
       return;
     }
 
@@ -142,9 +145,10 @@ export default function Concordance() {
       });
       setIsAddingCustom(false);
       setNewEntry({ language: 'Hebrew', usage: [] });
+      toast.success('Custom entry saved!');
     } catch (error) {
       console.error('Failed to add custom entry:', error);
-      alert('Failed to save entry. Please try again.');
+      toast.error('Failed to save entry. Please try again.');
     }
   };
 

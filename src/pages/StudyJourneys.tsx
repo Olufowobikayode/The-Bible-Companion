@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { motion } from 'motion/react';
 import { getGuidedStudyJourney } from '../lib/gemini';
 import { Loader2, Sparkles, BookOpen } from 'lucide-react';
+import { toast } from 'sonner';
 
 export default function StudyJourneys() {
   const [theme, setTheme] = useState('');
@@ -14,8 +15,10 @@ export default function StudyJourneys() {
     try {
       const result = await getGuidedStudyJourney(theme);
       setJourney(result);
+      toast.success('Study journey generated!');
     } catch (e) {
       console.error(e);
+      toast.error('Failed to generate study journey.');
     } finally {
       setLoading(false);
     }

@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Book, ChevronRight, ChevronLeft, Sparkles, Heart, ShieldCheck, Loader2 } from 'lucide-react';
 import { db, auth } from '../firebase';
 import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
+import { toast } from 'sonner';
 
 const DEVOTIONAL_DAYS = Array.from({ length: 30 }, (_, i) => ({
   day: i + 1,
@@ -51,8 +52,10 @@ export default function Devotional() {
         await setDoc(doc(db, 'user_profiles', auth.currentUser.uid), {
           devotionalDay: day
         }, { merge: true });
+        toast.success(`Progress saved for Day ${day}.`);
       } catch (error) {
         console.error('Error saving progress:', error);
+        toast.error('Failed to save progress.');
       }
     }
   };

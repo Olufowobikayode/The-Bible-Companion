@@ -4,6 +4,7 @@ import { db, auth } from '../firebase';
 import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, getDocs } from 'firebase/firestore';
 import { BookOpen, CheckCircle2, Circle, Loader2, Sparkles, Plus } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { toast } from 'sonner';
 
 interface ReadingPlan {
   id?: string;
@@ -75,6 +76,7 @@ export default function ReadingPlans() {
       if (items.length > 0) setActiveTab('my-plans');
     }, (error) => {
       console.error('Error fetching plans:', error);
+      toast.error('Failed to load reading plans.');
       setLoading(false);
     });
 
@@ -83,7 +85,7 @@ export default function ReadingPlans() {
 
   const handleStartPlan = async (plan: any) => {
     if (!auth.currentUser) {
-      alert('Please sign in to start a reading plan.');
+      toast.error('Please sign in to start a reading plan.');
       return;
     }
 
@@ -93,9 +95,11 @@ export default function ReadingPlans() {
         uid: auth.currentUser.uid,
         startedAt: new Date().toISOString()
       });
+      toast.success(`Started plan: ${plan.title}`);
       setActiveTab('my-plans');
     } catch (error) {
       console.error('Error starting plan:', error);
+      toast.error('Failed to start reading plan.');
     }
   };
 
@@ -112,6 +116,7 @@ export default function ReadingPlans() {
       });
     } catch (error) {
       console.error('Error updating day:', error);
+      toast.error('Failed to update progress.');
     }
   };
 

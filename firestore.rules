@@ -146,14 +146,38 @@ service cloud.firestore {
       allow create: if isAuthenticated() && isValidPrayerRequest(request.resource.data);
       allow update: if isAuthenticated() && 
                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['prayCount']) &&
-                    request.resource.data.prayCount == resource.data.prayCount + 1 &&
-                    getAfter(/databases/$(database)/documents/prayer_requests/$(requestId)/prayers/$(request.auth.uid)) != null;
+                    (
+                      (request.resource.data.prayCount == resource.data.prayCount + 1 && 
+                       getAfter(/databases/$(database)/documents/user_prayers/$(request.auth.uid + "_" + requestId)) != null) ||
+                      (request.resource.data.prayCount == resource.data.prayCount - 1 && 
+                       getAfter(/databases/$(database)/documents/user_prayers/$(request.auth.uid + "_" + requestId)) == null)
+                    );
       allow delete: if isAuthor() || isAdmin();
 
-      match /prayers/{userId} {
+      match /typed_prayers/{prayerId} {
         allow read: if true;
-        allow create: if isOwner(userId) && !exists(/databases/$(database)/documents/prayer_requests/$(requestId)/prayers/$(userId));
+        allow create: if isAuthenticated() && request.resource.data.authorUid == request.auth.uid;
       }
+    }
+
+    match /user_prayers/{prayerId} {
+      allow read: if isAuthenticated() && prayerId.startsWith(request.auth.uid);
+      allow create: if isAuthenticated() && prayerId.startsWith(request.auth.uid);
+      allow delete: if isAuthenticated() && prayerId.startsWith(request.auth.uid);
+    }
+
+    function isValidMessage(data) {
+      return data.keys().hasAll(['text', 'from', 'senderId', 'recipientId', 'createdAt']) &&
+             data.text is string && data.text.size() > 0 && data.text.size() < 5000 &&
+             data.from is string &&
+             data.senderId is string &&
+             data.recipientId is string &&
+             data.createdAt is timestamp;
+    }
+
+    match /messages/{messageId} {
+      allow read: if isAuthenticated() && (resource.data.recipientId == 'global' || resource.data.recipientId == request.auth.uid || resource.data.senderId == request.auth.uid);
+      allow create: if isAuthenticated() && request.resource.data.senderId == request.auth.uid && isValidMessage(request.resource.data);
     }
 
     match /forums/{forumId} {

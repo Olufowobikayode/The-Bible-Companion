@@ -5,6 +5,7 @@ import { db, auth } from '../firebase';
 import { collection, addDoc } from 'firebase/firestore';
 import { Search, Heart, Loader2, Sparkles } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import { toast } from 'sonner';
 
 const SUGGESTED_EMOTIONS = [
   "Peace", "Anxiety", "Stress", "Fear", "Grief", "Anger", "Hope", "Gratitude", "Loneliness"
@@ -44,6 +45,7 @@ export default function Home() {
       }
     } catch (error) {
       console.error('Failed to generate response:', error);
+      toast.error('Failed to generate response. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -51,7 +53,7 @@ export default function Home() {
 
   const handleBookmark = async (verse: any) => {
     if (!auth.currentUser) {
-      alert('Please sign in to bookmark verses.');
+      toast.error('Please sign in to bookmark verses.');
       return;
     }
 
@@ -63,9 +65,10 @@ export default function Home() {
         translation: 'WEB', // Default for emotion responses
         createdAt: new Date().toISOString()
       });
-      alert('Verse bookmarked!');
+      toast.success('Verse bookmarked!');
     } catch (error) {
       console.error('Error bookmarking:', error);
+      toast.error('Failed to bookmark verse.');
     }
   };
 

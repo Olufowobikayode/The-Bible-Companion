@@ -70,6 +70,19 @@ export const fetchBibleVerse = async (reference: string, translation: string = '
   }
 };
 
+export const fetchSefariaText = async (book: string, chapter: number) => {
+  try {
+    // Sefaria API uses standard book names, e.g., "Genesis 1"
+    const response = await fetch(`https://www.sefaria.org/api/texts/${encodeURIComponent(book)}.${chapter}?context=0`);
+    if (!response.ok) throw new Error('Sefaria text not found');
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Error fetching Sefaria text:', error);
+    return null;
+  }
+};
+
 export const fetchChapter = async (book: string, chapter: number, translation: string = 'KJV') => {
   const chapterId = `${translation}_${book}_${chapter}`;
   

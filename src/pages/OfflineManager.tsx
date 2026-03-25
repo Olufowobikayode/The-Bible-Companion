@@ -3,6 +3,7 @@ import { db_local } from '../lib/db';
 import { ALL_BOOKS, BOOK_CHAPTER_COUNTS, fetchChapter } from '../lib/bible';
 import { TRANSLATIONS } from '../types';
 import { Download, Trash2, CheckCircle2, Loader2, Database } from 'lucide-react';
+import { toast } from 'sonner';
 
 export default function OfflineManager() {
   const [downloadedBooks, setDownloadedBooks] = useState<{ book: string; translation: string; count: number }[]>([]);
@@ -36,6 +37,7 @@ export default function OfflineManager() {
       setDownloadedBooks(formattedStats);
     } catch (error) {
       console.error("Failed to load offline stats", error);
+      toast.error("Failed to load offline stats.");
     } finally {
       setLoading(false);
     }
@@ -45,13 +47,19 @@ export default function OfflineManager() {
     const total = BOOK_CHAPTER_COUNTS[selectedBook] || 1;
     setSyncProgress({ book: selectedBook, translation: selectedTranslation, current: 0, total });
     
-    for (let c = 1; c <= total; c++) {
-      setSyncProgress({ book: selectedBook, translation: selectedTranslation, current: c, total });
-      await fetchChapter(selectedBook, c, selectedTranslation);
+    try {
+      for (let c = 1; c <= total; c++) {
+        setSyncProgress({ book: selectedBook, translation: selectedTranslation, current: c, total });
+        await fetchChapter(selectedBook, c, selectedTranslation);
+      }
+      toast.success(`${selectedBook} downloaded successfully.`);
+    } catch (error) {
+      console.error("Download failed", error);
+      toast.error(`Failed to download ${selectedBook}.`);
+    } finally {
+      setSyncProgress(null);
+      loadStats();
     }
-    
-    setSyncProgress(null);
-    loadStats();
   };
 
   const handleDelete = (book: string, translation: string) => {
@@ -71,9 +79,11 @@ export default function OfflineManager() {
         
       const idsToDelete = chaptersToDelete.map(ch => ch.id);
       await db_local.bible_chapters.bulkDelete(idsToDelete);
+      toast.success(`${book} deleted from offline storage.`);
       loadStats();
     } catch (error) {
       console.error("Failed to delete offline book", error);
+      toast.error(`Failed to delete ${book}.`);
     }
   };
 

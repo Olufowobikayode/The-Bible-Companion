@@ -1,9 +1,11 @@
 import { useParams, Link } from 'react-router-dom';
-import { collection, query, getDocs, addDoc, serverTimestamp, deleteDoc, doc, getDoc } from 'firebase/firestore';
-import { db, auth } from '../../firebase';
+import { supabase } from '../../lib/supabase';
+import { api } from '../../lib/api';
 import { useEffect, useState } from 'react';
 import { Trash2, ChevronLeft } from 'lucide-react';
 import { motion } from 'motion/react';
+import { toast } from 'sonner';
+import { moderateContent } from '../../lib/moderation';
 
 interface Thread {
   id: string;
@@ -20,30 +22,55 @@ export default function ThreadList() {
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [user, setUser] = useState<any>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const fetchThreads = async () => {
     if (!forumId) return;
-    const q = query(collection(db, `forums/${forumId}/threads`));
-    const querySnapshot = await getDocs(q);
-    setThreads(querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Thread)));
+    try {
+      const data = await api.get(`/api/forums/${forumId}/threads`);
+      setThreads(data);
+    } catch (error) {
+      console.error("Error fetching threads:", error);
+    }
   };
 
   useEffect(() => {
     fetchThreads();
     const checkAdmin = async () => {
-      if (auth.currentUser) {
-        if (auth.currentUser.email === 'kayodeolufowobi709@gmail.com') {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        setUser(session.user);
+        if (session.user.email === 'kayodeolufowobi709@gmail.com') {
           setIsAdmin(true);
-          return;
+        } else {
+          try {
+            const profile = await api.get(`/api/user-profiles/${session.user.id}`);
+            if (profile?.role === 'admin') {
+              setIsAdmin(true);
+            }
+          } catch (error) {
+            console.error("Error checking admin status:", error);
+          }
         }
-        const userDoc = await getDoc(doc(db, 'user_profiles', auth.currentUser.uid));
-        if (userDoc.exists() && userDoc.data().role === 'admin') {
-          setIsAdmin(true);
-        }
+      } else {
+        setUser(null);
+        setIsAdmin(false);
       }
     };
     checkAdmin();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) {
+        setUser(session.user);
+        checkAdmin();
+      } else {
+        setUser(null);
+        setIsAdmin(false);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, [forumId]);
 
   const handleDeleteThread = async (id: string, e: React.MouseEvent) => {
@@ -53,37 +80,44 @@ export default function ThreadList() {
   };
 
   const executeDeleteThread = async () => {
-    if (!confirmDeleteId) return;
+    if (!confirmDeleteId || !forumId) return;
     const id = confirmDeleteId;
     setConfirmDeleteId(null);
     
     try {
-      await deleteDoc(doc(db, `forums/${forumId}/threads`, id));
+      await api.delete(`/api/forums/${forumId}/threads/${id}`);
       setThreads(prev => prev.filter(t => t.id !== id));
+      toast.success("Thread deleted");
     } catch (error) {
       console.error("Error deleting thread:", error);
-      alert("Failed to delete thread.");
+      toast.error("Failed to delete thread.");
     }
   };
 
   const handleCreateThread = async () => {
-    if (!newThreadTitle || !auth.currentUser || !forumId) return;
+    if (!newThreadTitle || !user || !forumId) return;
     setIsSubmitting(true);
     try {
-      await addDoc(collection(db, `forums/${forumId}/threads`), {
-        forumId,
+      const moderationResult = await moderateContent(newThreadTitle);
+      if (!moderationResult.isApproved) {
+        toast.error(`Thread rejected: ${moderationResult.reason}`);
+        setIsSubmitting(false);
+        return;
+      }
+
+      const newThread = await api.post(`/api/forums/${forumId}/threads`, {
         title: newThreadTitle,
-        authorUid: auth.currentUser.uid,
-        authorName: auth.currentUser.displayName || 'Anonymous',
+        authorUid: user.id,
+        authorName: user.user_metadata?.full_name || 'Anonymous',
         isAnonymous,
-        createdAt: serverTimestamp()
       });
+      setThreads(prev => [newThread, ...prev]);
       setNewThreadTitle('');
       setIsAnonymous(false);
-      await fetchThreads();
+      toast.success("Thread created");
     } catch (error) {
       console.error("Error creating thread:", error);
-      alert("Failed to create thread.");
+      toast.error("Failed to create thread.");
     } finally {
       setIsSubmitting(false);
     }
@@ -99,7 +133,7 @@ export default function ThreadList() {
         <h1 className="serif text-3xl sm:text-4xl font-semibold text-sage-dark">Threads</h1>
       </div>
       
-      {auth.currentUser ? (
+      {user ? (
         <div className="mb-8 p-6 sm:p-8 mx-4 sm:mx-0 bg-sage-light/20 rounded-[2rem] border border-sage/10">
           <h2 className="serif text-xl sm:text-2xl font-semibold text-sage-dark mb-4">Start a Discussion</h2>
           <div className="flex flex-col sm:flex-row gap-3 mb-4">
@@ -148,7 +182,7 @@ export default function ThreadList() {
                 Posted by {thread.isAnonymous ? 'Anonymous' : (thread.authorName || 'Unknown')}
               </p>
             </Link>
-            {(isAdmin || (auth.currentUser && auth.currentUser.uid === thread.authorUid)) && (
+            {(isAdmin || (user && user.id === thread.authorUid)) && (
               <button 
                 onClick={(e) => handleDeleteThread(thread.id, e)}
                 className="absolute top-6 right-6 p-2 text-ink/20 hover:text-destructive transition-colors"

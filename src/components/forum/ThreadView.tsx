@@ -1,9 +1,11 @@
 import { useParams, Link } from 'react-router-dom';
-import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc, getDoc } from 'firebase/firestore';
-import { db, auth } from '../../firebase';
+import { supabase } from '../../lib/supabase';
+import { api } from '../../lib/api';
 import { useEffect, useState } from 'react';
-import { Trash2, ChevronLeft } from 'lucide-react';
+import { Trash2, ChevronLeft, Heart, MessageCircle } from 'lucide-react';
 import { motion } from 'motion/react';
+import { toast } from 'sonner';
+import { moderateContent } from '../../lib/moderation';
 
 interface Post {
   id: string;
@@ -11,6 +13,13 @@ interface Post {
   authorUid: string;
   authorName: string;
   isAnonymous: boolean;
+  likes?: number;
+  createdAt?: any;
+  replyTo?: {
+    id: string;
+    authorName: string;
+    content: string;
+  };
 }
 
 export default function ThreadView() {
@@ -20,30 +29,56 @@ export default function ThreadView() {
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [user, setUser] = useState<any>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [replyingTo, setReplyingTo] = useState<Post | null>(null);
+
+  const fetchPosts = async () => {
+    if (!forumId || !threadId) return;
+    try {
+      const data = await api.get(`/api/forums/${forumId}/threads/${threadId}/posts`);
+      setPosts(data);
+    } catch (error) {
+      console.error("Error fetching posts:", error);
+    }
+  };
 
   useEffect(() => {
-    if (!forumId || !threadId) return;
-    const q = query(collection(db, `forums/${forumId}/threads/${threadId}/posts`), orderBy('createdAt', 'asc'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      setPosts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Post)));
-    });
-
+    fetchPosts();
     const checkAdmin = async () => {
-      if (auth.currentUser) {
-        if (auth.currentUser.email === 'kayodeolufowobi709@gmail.com') {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        setUser(session.user);
+        if (session.user.email === 'kayodeolufowobi709@gmail.com') {
           setIsAdmin(true);
-          return;
+        } else {
+          try {
+            const profile = await api.get(`/api/user-profiles/${session.user.id}`);
+            if (profile?.role === 'admin') {
+              setIsAdmin(true);
+            }
+          } catch (error) {
+            console.error("Error checking admin status:", error);
+          }
         }
-        const userDoc = await getDoc(doc(db, 'user_profiles', auth.currentUser.uid));
-        if (userDoc.exists() && userDoc.data().role === 'admin') {
-          setIsAdmin(true);
-        }
+      } else {
+        setUser(null);
+        setIsAdmin(false);
       }
     };
     checkAdmin();
 
-    return () => unsubscribe();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) {
+        setUser(session.user);
+        checkAdmin();
+      } else {
+        setUser(null);
+        setIsAdmin(false);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, [forumId, threadId]);
 
   const handleDeletePost = async (id: string) => {
@@ -51,86 +86,69 @@ export default function ThreadView() {
   };
 
   const executeDeletePost = async () => {
-    if (!confirmDeleteId) return;
+    if (!confirmDeleteId || !forumId || !threadId) return;
     const id = confirmDeleteId;
     setConfirmDeleteId(null);
     
     try {
-      await deleteDoc(doc(db, `forums/${forumId}/threads/${threadId}/posts`, id));
+      await api.delete(`/api/forums/${forumId}/threads/${threadId}/posts/${id}`);
+      setPosts(prev => prev.filter(p => p.id !== id));
+      toast.success("Post deleted");
     } catch (error) {
       console.error("Error deleting post:", error);
-      alert("Failed to delete post.");
+      toast.error("Failed to delete post.");
+    }
+  };
+
+  const handleLike = async (postId: string) => {
+    if (!user) {
+      toast.error("Please sign in to like posts.");
+      return;
+    }
+    try {
+      await api.post(`/api/forums/${forumId}/threads/${threadId}/posts/${postId}/like`, {});
+      setPosts(prev => prev.map(p => p.id === postId ? { ...p, likes: (p.likes || 0) + 1 } : p));
+    } catch (error) {
+      console.error("Error liking post:", error);
     }
   };
 
   const handleCreatePost = async () => {
-    if (!newPostContent || !auth.currentUser || !forumId || !threadId) return;
+    if (!newPostContent || !user || !forumId || !threadId) return;
     
     setIsSubmitting(true);
     try {
-      // 1. Moderate post
-      const modResponse = await fetch('/api/ai/moderate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ postContent: newPostContent })
-      });
-      
-      if (!modResponse.ok) {
-        console.warn("Moderation service failed, allowing post.");
-      } else {
-        const modData = await modResponse.json();
-        if (modData.allowed === false) {
-          alert(`Post rejected: ${modData.reason}`);
-          setIsSubmitting(false);
-          return;
-        }
+      const moderationResult = await moderateContent(newPostContent);
+      if (!moderationResult.isApproved) {
+        toast.error(`Post rejected: ${moderationResult.reason}`);
+        setIsSubmitting(false);
+        return;
       }
       
-      // 2. Add user post
-      await addDoc(collection(db, `forums/${forumId}/threads/${threadId}/posts`), {
-        threadId,
+      const postData: any = {
         content: newPostContent,
-        authorUid: auth.currentUser.uid,
-        authorName: auth.currentUser.displayName || 'Anonymous',
+        authorUid: user.id,
+        authorName: user.user_metadata?.full_name || 'Anonymous',
         isAnonymous,
-        createdAt: serverTimestamp()
-      });
+      };
+
+      if (replyingTo) {
+        postData.replyTo = {
+          id: replyingTo.id,
+          authorName: replyingTo.authorName,
+          content: replyingTo.content.substring(0, 100) + (replyingTo.content.length > 100 ? '...' : '')
+        };
+      }
+
+      const newPost = await api.post(`/api/forums/${forumId}/threads/${threadId}/posts`, postData);
+      setPosts(prev => [...prev, newPost]);
       
       setNewPostContent('');
       setIsAnonymous(false);
-
-      // 3. Trigger AI response
-      try {
-        const aiResponse = await fetch('/api/ai/respond', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            forumId, 
-            threadId, 
-            postContent: newPostContent,
-            context: "A Christian community forum discussion."
-          })
-        });
-        
-        if (aiResponse.ok) {
-          const aiData = await aiResponse.json();
-          if (aiData.response) {
-            await addDoc(collection(db, `forums/${forumId}/threads/${threadId}/posts`), {
-              threadId,
-              content: aiData.response,
-              authorUid: 'AI_ASSISTANT',
-              authorName: 'AI Assistant',
-              isAnonymous: false,
-              createdAt: serverTimestamp()
-            });
-          }
-        }
-      } catch (error) {
-        console.error("AI response failed:", error);
-      }
+      setReplyingTo(null);
     } catch (error) {
       console.error("Error creating post:", error);
-      alert("Failed to create post. Please try again.");
+      toast.error("Failed to create post. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -154,16 +172,50 @@ export default function ThreadView() {
             animate={{ opacity: 1, y: 0 }}
             className={`p-6 sm:p-8 border rounded-3xl relative group ${post.authorUid === 'AI_ASSISTANT' ? 'bg-sage-light/30 border-sage-light' : 'bg-white border-sage/10'}`}
           >
-            <p className="text-ink/80 whitespace-pre-wrap leading-relaxed text-sm sm:text-base">{post.content}</p>
-            <div className="flex items-center gap-3 mt-6">
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${post.authorUid === 'AI_ASSISTANT' ? 'bg-sage text-white' : 'bg-sage-light text-sage'}`}>
-                {post.authorUid === 'AI_ASSISTANT' ? 'AI' : (post.authorName?.[0] || 'U')}
+            {post.replyTo && (
+              <div className="mb-4 p-3 bg-sage-light/10 border-l-4 border-sage rounded-r-xl text-xs">
+                <p className="font-bold text-sage mb-1">Replying to {post.replyTo.authorName}</p>
+                <p className="text-ink/60 italic">"{post.replyTo.content}"</p>
               </div>
-              <span className="text-xs font-medium text-ink/40">
-                {post.authorUid === 'AI_ASSISTANT' ? 'AI Assistant' : (post.isAnonymous ? 'Anonymous' : (post.authorName || 'User'))}
-              </span>
+            )}
+            <p className="text-ink/80 whitespace-pre-wrap leading-relaxed text-sm sm:text-base">{post.content}</p>
+            <div className="flex items-center justify-between mt-6">
+              <div className="flex items-center gap-3">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${post.authorUid === 'AI_ASSISTANT' ? 'bg-sage text-white' : 'bg-sage-light text-sage'}`}>
+                  {post.authorUid === 'AI_ASSISTANT' ? 'AI' : (post.authorName?.[0] || 'U')}
+                </div>
+                <span className="text-xs font-medium text-ink/40">
+                  {post.authorUid === 'AI_ASSISTANT' ? 'AI Assistant' : (post.isAnonymous ? 'Anonymous' : (post.authorName || 'User'))}
+                </span>
+                {post.createdAt && (
+                  <span className="text-[10px] text-ink/20 font-medium">
+                    • {post.createdAt?.toDate?.() ? post.createdAt.toDate().toLocaleString() : new Date(post.createdAt).toLocaleString()}
+                  </span>
+                )}
+              </div>
+              
+              <div className="flex items-center gap-4">
+                <button 
+                  onClick={() => handleLike(post.id)}
+                  className="flex items-center gap-1 text-ink/40 hover:text-sage transition-colors text-sm"
+                >
+                  <Heart className="w-4 h-4" />
+                  <span>{post.likes || 0}</span>
+                </button>
+                <button 
+                  onClick={() => {
+                    setReplyingTo(post);
+                    const textarea = document.getElementById('reply-textarea');
+                    textarea?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  }}
+                  className="flex items-center gap-1 text-ink/40 hover:text-sage transition-colors text-sm"
+                >
+                  <MessageCircle className="w-4 h-4" />
+                  <span>Reply</span>
+                </button>
+              </div>
             </div>
-            {(isAdmin || (auth.currentUser && auth.currentUser.uid === post.authorUid)) && post.authorUid !== 'AI_ASSISTANT' && (
+            {(isAdmin || (user && user.id === post.authorUid)) && post.authorUid !== 'AI_ASSISTANT' && (
               <button 
                 onClick={() => handleDeletePost(post.id)}
                 className="absolute top-6 right-6 p-2 text-ink/20 hover:text-destructive transition-colors"
@@ -206,14 +258,33 @@ export default function ThreadView() {
         </div>
       )}
       
-      {auth.currentUser ? (
+      {user ? (
         <div className="p-6 sm:p-8 mx-4 sm:mx-0 bg-sage-light/20 rounded-[2rem] border border-sage/10">
-          <h2 className="serif text-xl sm:text-2xl font-semibold text-sage-dark mb-4">Reply to Discussion</h2>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="serif text-xl sm:text-2xl font-semibold text-sage-dark">Reply to Discussion</h2>
+            {replyingTo && (
+              <button 
+                onClick={() => setReplyingTo(null)}
+                className="text-xs font-bold text-red-500 uppercase tracking-widest hover:underline"
+              >
+                Cancel Reply
+              </button>
+            )}
+          </div>
+          
+          {replyingTo && (
+            <div className="mb-4 p-4 bg-white border-l-4 border-sage rounded-r-2xl text-sm">
+              <p className="font-bold text-sage mb-1">Replying to {replyingTo.authorName}</p>
+              <p className="text-ink/60 italic truncate">"{replyingTo.content}"</p>
+            </div>
+          )}
+
           <textarea 
+            id="reply-textarea"
             value={newPostContent} 
             onChange={(e) => setNewPostContent(e.target.value)}
             className="w-full p-4 bg-white border border-sage/20 rounded-2xl resize-none h-32 focus:outline-none focus:border-sage mb-4 text-sm"
-            placeholder="Write a reply..."
+            placeholder={replyingTo ? `Replying to ${replyingTo.authorName}...` : "Write a reply..."}
             disabled={isSubmitting}
           />
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">

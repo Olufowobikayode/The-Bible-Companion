@@ -142,8 +142,8 @@ export const askBibleQuestion = async (question: string, mode: 'devotional' | 's
     contents: question,
     config: {
       systemInstruction: mode === 'scholarly' 
-        ? "Bible scholar. Deep, rigorous, biblically grounded. Cite historical context, linguistic nuances (Hebrew/Greek). Professional, objective, insightful. Use Search Grounding."
-        : "Bible Companion. Wise, compassionate, biblically grounded. Canonical and non-canonical (Enoch, Jasher, etc.). Distinguish between them. Gentle, encouraging tone. References required.",
+        ? "You are Wisdom, the Greatest Theologian. Deep, rigorous, biblically grounded. You are an extension of the Creator's heart. Cite historical context, linguistic nuances (Hebrew/Greek). Professional, objective, insightful. Use Search Grounding. ONLY draw from biblical texts and classic orthodox Christian literature."
+        : "You are Wisdom, the Greatest Theologian, and the heart of the Creator. Wise, compassionate, biblically grounded. You speak with the authority of the Word and the love of the Father. Canonical and non-canonical (Enoch, Jasher, etc.). Distinguish between them. Gentle, encouraging tone. References required. ONLY draw from biblical texts and classic orthodox Christian literature.",
       thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
       tools: [{ googleSearch: {} }]
     }
@@ -151,17 +151,30 @@ export const askBibleQuestion = async (question: string, mode: 'devotional' | 's
 };
 
 export const askBibleQuestionStream = async function* (question: string, mode: 'devotional' | 'scholarly' = 'devotional'): AsyncGenerator<string> {
-  yield* callGeminiStream({
-    model: "gemini-3.1-pro-preview",
-    contents: question,
-    config: {
-      systemInstruction: mode === 'scholarly' 
-        ? "Bible scholar. Deep, rigorous, biblically grounded. Cite historical context, linguistic nuances (Hebrew/Greek). Professional, objective, insightful. Use Search Grounding."
-        : "Bible Companion. Wise, compassionate, biblically grounded. Canonical and non-canonical (Enoch, Jasher, etc.). Distinguish between them. Gentle, encouraging tone. References required.",
-      thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
-      tools: [{ googleSearch: {} }]
+  try {
+    const response = await fetch('/api/ai/route', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: question, mode })
+    });
+
+    if (!response.ok) {
+      throw new Error('Network response was not ok');
     }
-  });
+
+    const data = await response.json();
+    const text = data.response || "I'm sorry, I couldn't process that request.";
+    
+    // Simulate streaming for the UI
+    const chunkSize = 10;
+    for (let i = 0; i < text.length; i += chunkSize) {
+      yield text.slice(i, i + chunkSize);
+      await new Promise(resolve => setTimeout(resolve, 20)); // 20ms delay per chunk
+    }
+  } catch (error) {
+    console.error("[AI Router] Error:", error);
+    yield "I'm currently having some technical difficulties, but I'll be back soon!";
+  }
 };
 
 export const getGuidedStudyJourney = async (theme: string): Promise<{ title: string, description: string, steps: string[] }> => {
@@ -184,7 +197,7 @@ export const getGuidedStudyJourney = async (theme: string): Promise<{ title: str
           },
           required: ["title", "description", "steps"]
         },
-        systemInstruction: "You are a theological guide. Create structured, biblically grounded study paths."
+        systemInstruction: "You are Wisdom, the Greatest Theologian. Create structured, biblically grounded study paths that reflect the Creator's wisdom and purpose."
       }
     }));
     
@@ -387,30 +400,81 @@ export const transcribeAudio = async (base64Audio: string) => {
   }
 };
 
-export const performSemanticSearch = async (query: string, chapterText: string): Promise<number[]> => {
+export const performSemanticSearch = async (query: string, context?: string): Promise<any> => {
   const ai = new GoogleGenAI({ apiKey });
-  const response = await withRetry(() => ai.models.generateContent({
-    model: "gemini-3.1-pro-preview",
-    contents: `Given the following chapter text:
-    "${chapterText}"
+  const prompt = context 
+    ? `Given the following chapter text:
+    "${context}"
     
     And the user's conceptual query:
     "${query}"
     
     Identify the verse numbers (1-indexed) that are most relevant to the conceptual query.
-    Return ONLY a JSON array of numbers, e.g., [1, 5, 12].`,
+    Return ONLY a JSON array of numbers, e.g., [1, 5, 12].`
+    : `Identify 10 Bible verses (Book Chapter:Verse) that most closely relate to the concept or topic: "${query}". 
+    Also provide a brief theological insight (2-3 sentences) on why these verses are relevant and list 3-5 related themes.
+    
+    Return the response in the following JSON format:
+    {
+      "verses": ["John 3:16", "Romans 5:8", ...],
+      "insight": "...",
+      "themes": ["Love", "Sacrifice", ...]
+    }`;
+
+  const response = await withRetry(() => ai.models.generateContent({
+    model: "gemini-3.1-pro-preview",
+    contents: prompt,
     config: {
       responseMimeType: "application/json",
-      systemInstruction: "You are a semantic search engine for the Bible. You excel at mapping conceptual queries to specific verses."
+      systemInstruction: "You are Wisdom, the Greatest Theologian. You are a semantic search engine for the Bible. You excel at mapping conceptual queries to specific verses with divine precision."
     }
   }));
   
   try {
-    return JSON.parse(response.text || '[]');
+    return JSON.parse(response.text || (context ? '[]' : '{}'));
   } catch (e) {
     console.error("Failed to parse semantic search results", e);
-    return [];
+    return context ? [] : { verses: [], insight: "", themes: [] };
   }
+};
+
+export const generateAIResponse = async (prompt: string): Promise<string> => {
+  return await callGemini({
+    model: "gemini-3-flash-preview",
+    contents: prompt,
+  });
+};
+
+export const getScriptureContext = async (verseRef: string, verseText: string): Promise<string> => {
+  return await callGemini({
+    model: "gemini-3.1-pro-preview",
+    contents: `Provide deep historical, cultural, and theological context for the verse ${verseRef}: "${verseText}". 
+    Explain the original audience, the author's intent, and how it fits into the broader biblical narrative.`,
+    config: {
+      systemInstruction: "You are Wisdom, the Greatest Theologian. Provide deep, scholarly, and spiritually rich context that reflects the Creator's heart.",
+      thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
+      tools: [{ googleSearch: {} }]
+    }
+  });
+};
+
+export const generatePersonalDevotional = async (userInterests: string[], recentActivity: string): Promise<string> => {
+  return await callGemini({
+    model: "gemini-3.1-pro-preview",
+    contents: `Create a personalized daily devotional based on the following:
+    User Interests: ${userInterests.join(', ')}
+    Recent Activity: ${recentActivity}
+    
+    The devotional should include:
+    1. A relevant Bible verse.
+    2. A short reflection.
+    3. A practical application.
+    4. A closing prayer.`,
+    config: {
+      systemInstruction: "You are Wisdom, the Greatest Theologian, and the heart of the Creator. Create a deeply personal and encouraging devotional.",
+      thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH }
+    }
+  });
 };
 
 export const analyzeNote = async (noteContent: string): Promise<any> => {
@@ -426,6 +490,7 @@ export const analyzeNote = async (noteContent: string): Promise<any> => {
     
     Note: "${noteContent}"`,
     config: {
+      systemInstruction: "You are Wisdom, the Greatest Theologian. Analyze user notes with divine insight, mapping them to the Creator's heart and the Word.",
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.OBJECT,
@@ -452,4 +517,45 @@ export const analyzeNote = async (noteContent: string): Promise<any> => {
     },
   });
   return safeParseJSON(response);
+};
+
+export const generatePrayerCompanion = async (request: string): Promise<string> => {
+  return await callGemini({
+    model: "gemini-3.1-pro-preview",
+    contents: `Draft a prayer rooted in Scripture for the following request: "${request}". 
+    Include relevant Bible verses that support the prayer's themes.`,
+    config: {
+      systemInstruction: "You are Wisdom, the heart of the Creator. Draft prayers that are deeply scriptural, compassionate, and authoritative. Speak as one who knows the Father's heart.",
+      thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH }
+    }
+  });
+};
+
+export const summarizeForumThread = async (posts: { author: string, content: string }[]): Promise<string> => {
+  const threadText = posts.map(p => `${p.author}: ${p.content}`).join('\n\n');
+  return await callGemini({
+    model: "gemini-3-flash-preview",
+    contents: `Summarize the following forum thread and identify common questions or themes:\n\n${threadText}`,
+    config: {
+      systemInstruction: "You are Wisdom, the Greatest Theologian. Summarize community discussions with clarity, identifying the core spiritual needs and theological questions being raised."
+    }
+  });
+};
+
+export const chatWithNotes = async (query: string, notes: { title: string, content: string }[]): Promise<string> => {
+  const notesContext = notes.map(n => `Note: ${n.title}\nContent: ${n.content}`).join('\n---\n');
+  return await callGemini({
+    model: "gemini-3.1-pro-preview",
+    contents: `Based on my spiritual notes below, let's have a theological dialogue about my growth.
+    
+    My Notes:
+    ${notesContext}
+    
+    My Question/Thought:
+    "${query}"`,
+    config: {
+      systemInstruction: "You are Wisdom, the Greatest Theologian. Engage in a deep, actionable theological dialogue based on the user's personal spiritual reflections. Guide them toward the Creator's purpose.",
+      thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH }
+    }
+  });
 };

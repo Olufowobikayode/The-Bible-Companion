@@ -1,7 +1,6 @@
 import { Link } from 'react-router-dom';
-import { collection, onSnapshot, addDoc, deleteDoc, doc, getDoc, query, orderBy } from 'firebase/firestore';
-import { onAuthStateChanged } from 'firebase/auth';
-import { db, auth } from '../../firebase';
+import { supabase } from '../../lib/supabase';
+import { api } from '../../lib/api';
 import { useEffect, useState } from 'react';
 import { Trash2, MessageSquare, Loader2 } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -16,7 +15,6 @@ export default function ForumList() {
   const [forums, setForums] = useState<Forum[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [isAuthLoading, setIsAuthLoading] = useState(true);
 
   const [newForumTitle, setNewForumTitle] = useState('');
   const [newForumDescription, setNewForumDescription] = useState('');
@@ -24,33 +22,49 @@ export default function ForumList() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, (u) => {
-      setIsAuthLoading(false);
-      if (u) {
-        if (u.email === 'kayodeolufowobi709@gmail.com') {
+    const fetchForums = async () => {
+      try {
+        const data = await api.get('/api/forums');
+        setForums(data);
+      } catch (error) {
+        console.error("Error fetching forums:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    const checkAdmin = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        if (session.user.email === 'kayodeolufowobi709@gmail.com') {
           setIsAdmin(true);
         } else {
-          getDoc(doc(db, 'user_profiles', u.uid)).then(userDoc => {
-            if (userDoc.exists() && userDoc.data().role === 'admin') {
+          try {
+            const profile = await api.get(`/api/user-profiles/${session.user.id}`);
+            if (profile?.role === 'admin') {
               setIsAdmin(true);
             }
-          });
+          } catch (error) {
+            console.error("Error checking admin status:", error);
+          }
         }
+      } else {
+        setIsAdmin(false);
+      }
+    };
+
+    fetchForums();
+    checkAdmin();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) {
+        checkAdmin();
       } else {
         setIsAdmin(false);
       }
     });
 
-    const q = query(collection(db, 'forums'), orderBy('title', 'asc'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      setForums(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Forum)));
-      setLoading(false);
-    });
-
-    return () => {
-      unsubscribeAuth();
-      unsubscribe();
-    };
+    return () => subscription.unsubscribe();
   }, []);
 
   const handleDeleteForum = async (id: string, e: React.MouseEvent) => {
@@ -65,7 +79,8 @@ export default function ForumList() {
     setConfirmDeleteId(null);
     
     try {
-      await deleteDoc(doc(db, 'forums', id));
+      await api.delete(`/api/forums/${id}`);
+      setForums(prev => prev.filter(f => f.id !== id));
     } catch (error) {
       console.error("Error deleting forum:", error);
     }
@@ -73,14 +88,14 @@ export default function ForumList() {
 
   const handleCreateForum = async () => {
     if (!newForumTitle) return;
-    if (!auth.currentUser) return;
     
     setIsSubmitting(true);
     try {
-      await addDoc(collection(db, 'forums'), {
+      const newForum = await api.post('/api/forums', {
         title: newForumTitle,
         description: newForumDescription,
       });
+      setForums(prev => [...prev, newForum]);
       setNewForumTitle('');
       setNewForumDescription('');
     } catch (error) {

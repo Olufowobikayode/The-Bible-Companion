@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { fetchBibleVerse } from '../lib/bible';
-import { Loader2, Heart, Sparkles, BookOpen, MapPin, Search } from 'lucide-react';
+import { Loader2, Heart, Sparkles, BookOpen, MapPin, Search, BrainCircuit } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import { getTopicVerses, getNewsTopic } from '../lib/gemini';
+import { getTopicVerses, getNewsTopic, performSemanticSearch } from '../lib/gemini';
+import { toast } from 'sonner';
 
 const TOPICS = [
   { id: 'peace', name: 'Peace', icon: '🕊️', description: 'Finding calm in the midst of the storm.' },
@@ -18,18 +19,13 @@ const TOPICS = [
   { id: 'rest', name: 'Rest', icon: '🌙', description: 'Sabbath for the weary.' }
 ];
 
-const TOPIC_VERSES: Record<string, string[]> = {
-  peace: ["John 14:27", "Philippians 4:7", "Isaiah 26:3", "Matthew 11:28", "Psalm 29:11", "Numbers 6:24-26", "John 16:33", "Colossians 3:15", "2 Thessalonians 3:16", "Psalm 4:8"],
-  anxiety: ["1 Peter 5:7", "Philippians 4:6", "Matthew 6:34", "Psalm 94:19", "Isaiah 41:10", "Psalm 55:22", "Proverbs 12:25", "Matthew 11:28-30", "Psalm 34:4", "John 14:1"],
-  // ... other topics would be populated here
-};
-
 export default function Topics() {
   const [selectedTopic, setSelectedTopic] = useState<any>(null);
   const [verses, setVerses] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [customTopic, setCustomTopic] = useState('');
   const [loadingNews, setLoadingNews] = useState(false);
+  const [semanticResult, setSemanticResult] = useState<any>(null);
 
   useEffect(() => {
     if (selectedTopic) {
@@ -39,13 +35,20 @@ export default function Topics() {
 
   const loadTopicVerses = async () => {
     setLoading(true);
-    let refs = TOPIC_VERSES[selectedTopic.id];
-    if (!refs) {
-      refs = await getTopicVerses(selectedTopic.name);
+    setSemanticResult(null);
+    try {
+      // Use semantic search for more depth
+      const result = await performSemanticSearch(selectedTopic.name);
+      setSemanticResult(result);
+      
+      const results = await Promise.all(result.verses.map((ref: string) => fetchBibleVerse(ref)));
+      setVerses(results.filter(r => r !== null));
+    } catch (error) {
+      console.error("Failed to load topic verses:", error);
+      toast.error('Failed to load verses for this topic.');
+    } finally {
+      setLoading(false);
     }
-    const results = await Promise.all(refs.map((ref: string) => fetchBibleVerse(ref)));
-    setVerses(results.filter(r => r !== null));
-    setLoading(false);
   };
 
   const handleNewsTopic = async () => {
@@ -55,13 +58,16 @@ export default function Topics() {
       try {
         const topic = await getNewsTopic(latitude, longitude);
         setSelectedTopic({ ...topic, id: 'news', icon: '📰' });
+        toast.success('Generated topic based on local news.');
       } catch (error) {
         console.error("Failed to generate news topic:", error);
+        toast.error('Failed to generate topic from local news.');
       } finally {
         setLoadingNews(false);
       }
     }, (error) => {
       console.error("Geolocation error:", error);
+      toast.error('Location access denied. Cannot fetch local news topic.');
       setLoadingNews(false);
     });
   };
@@ -166,24 +172,32 @@ export default function Topics() {
               <div className="space-y-6">
                 <div className="bg-white p-8 rounded-3xl border border-sage/10 sticky top-24">
                   <h3 className="serif text-xl font-medium text-sage-dark mb-4 flex items-center gap-2">
-                    <Sparkles className="w-5 h-5" />
-                    Topic Reflection
+                    <BrainCircuit className="w-5 h-5 text-sage" />
+                    Theological Insight
                   </h3>
-                  <div className="markdown-body text-ink/80">
-                    <p>
-                      When we focus on <strong>{selectedTopic.name.toLowerCase()}</strong>, we are reminded that God's Word is a lamp to our feet. 
-                      In every season, His promises remain true. 
-                    </p>
-                    <p>
-                      Take a moment to breathe in these truths. Let them sink deep into your heart. 
-                      You are not alone in this journey.
-                    </p>
+                  <div className="markdown-body text-ink/80 prose prose-sage">
+                    {semanticResult ? (
+                      <ReactMarkdown>{semanticResult.insight}</ReactMarkdown>
+                    ) : (
+                      <p>
+                        When we focus on <strong>{selectedTopic.name.toLowerCase()}</strong>, we are reminded that God's Word is a lamp to our feet. 
+                        In every season, His promises remain true. 
+                      </p>
+                    )}
                   </div>
-                  <div className="mt-8 pt-6 border-t border-sage/20">
-                    <p className="serif italic text-sage-dark text-lg">
-                      "He leads me beside quiet waters, He restores my soul."
-                    </p>
-                  </div>
+                  
+                  {semanticResult?.themes && (
+                    <div className="mt-8 pt-6 border-t border-sage/10">
+                      <h4 className="text-[10px] font-bold text-sage uppercase tracking-widest mb-3">Key Themes</h4>
+                      <div className="flex flex-wrap gap-2">
+                        {semanticResult.themes.map((theme: string, i: number) => (
+                          <span key={i} className="px-3 py-1 bg-sage-light/30 text-sage-dark text-[10px] font-bold rounded-full uppercase tracking-wider">
+                            {theme}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

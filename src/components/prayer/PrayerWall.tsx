@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
-import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, doc, updateDoc, increment, setDoc, getDoc, deleteDoc, writeBatch } from 'firebase/firestore';
-import { onAuthStateChanged } from 'firebase/auth';
-import { db, auth } from '../../firebase';
-import { Trash2, Heart, Loader2 } from 'lucide-react';
+import { Trash2, Heart, Loader2, Share2, MessageSquare, Send } from 'lucide-react';
 import { motion } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { toast } from 'sonner';
+import { moderateContent } from '../../lib/moderation';
+import { api } from '../../lib/api';
+import { supabase } from '../../lib/supabase';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -30,88 +31,85 @@ export default function PrayerWall() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [userPrayers, setUserPrayers] = useState<Set<string>>(new Set());
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [typingPrayerId, setTypingPrayerId] = useState<string | null>(null);
+  const [typedPrayer, setTypedPrayer] = useState('');
+  const [isTypingSubmitting, setIsTypingSubmitting] = useState(false);
+  const [viewingPrayersId, setViewingPrayersId] = useState<string | null>(null);
+  const [typedPrayersList, setTypedPrayersList] = useState<any[]>([]);
+  const [user, setUser] = useState<any>(null);
 
   useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, (u) => {
-      setIsAuthLoading(false);
-      if (u) {
-        if (u.email === 'kayodeolufowobi709@gmail.com') {
-          setIsAdmin(true);
-        } else {
-          getDoc(doc(db, 'user_profiles', u.uid)).then(userDoc => {
-            if (userDoc.exists() && userDoc.data().role === 'admin') {
+    const fetchInitialData = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        setUser(session?.user ?? null);
+        setIsAuthLoading(false);
+
+        if (session?.user) {
+          const userEmail = session.user.email;
+          if (userEmail === 'kayodeolufowobi709@gmail.com') {
+            setIsAdmin(true);
+          } else {
+            const profile = await api.get(`/api/profile/${session.user.id}`);
+            if (profile && profile.role === 'admin') {
               setIsAdmin(true);
             }
-          });
+          }
+          
+          const prayerIds = await api.get('/api/user-prayers');
+          setUserPrayers(new Set(prayerIds));
         }
+
+        const prayerRequests = await api.get('/api/prayer-requests');
+        setRequests(prayerRequests);
+      } catch (error) {
+        console.error("Error fetching initial data:", error);
+      }
+    };
+
+    fetchInitialData();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        const prayerIds = await api.get('/api/user-prayers');
+        setUserPrayers(new Set(prayerIds));
       } else {
         setIsAdmin(false);
+        setUserPrayers(new Set());
       }
-    });
-
-    const q = query(collection(db, 'prayer_requests'), orderBy('createdAt', 'desc'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      setRequests(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PrayerRequest)));
     });
 
     return () => {
-      unsubscribeAuth();
-      unsubscribe();
+      subscription.unsubscribe();
     };
   }, []);
 
-  useEffect(() => {
-    if (!auth.currentUser) {
-      setUserPrayers(new Set());
-      return;
-    }
-
-    // This is a bit tricky to track across all requests efficiently without a subcollection query
-    // For now, we'll rely on the handlePray function to check if the user has already prayed
-    // or we could fetch the user's prayers if we had a top-level collection for it.
-    // Given the rules, we'll just check the specific prayer doc when the user clicks.
-  }, [auth.currentUser]);
-
   const handleSubmit = async () => {
-    if (!newRequest.trim() || !auth.currentUser) return;
+    if (!newRequest.trim() || !user) return;
     setIsSubmitting(true);
 
     try {
-      // Basic moderation using AI
-      try {
-        const modResponse = await fetch('/api/ai/moderate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ postContent: newRequest })
-        });
-        
-        if (modResponse.ok) {
-          const modData = await modResponse.json();
-          if (modData.allowed === false) {
-            // Use a more subtle way to show rejection if possible, but for now we'll just return
-            // and maybe set an error state
-            console.warn(`Prayer request rejected: ${modData.reason}`);
-            setIsSubmitting(false);
-            return;
-          }
-        }
-      } catch (e) {
-        console.warn("Moderation service failed, allowing post.");
+      const moderationResult = await moderateContent(newRequest);
+      if (!moderationResult.isApproved) {
+        toast.error(`Prayer request rejected: ${moderationResult.reason}`);
+        setIsSubmitting(false);
+        return;
       }
 
-      await addDoc(collection(db, 'prayer_requests'), {
+      const request = await api.post('/api/prayer-requests', {
         content: newRequest,
-        prayCount: 0,
-        authorUid: auth.currentUser.uid,
-        authorName: auth.currentUser.displayName || 'Anonymous',
-        isAnonymous,
-        createdAt: serverTimestamp()
+        authorName: user.user_metadata?.full_name || 'Anonymous',
+        isAnonymous
       });
       
+      setRequests(prev => [request, ...prev]);
       setNewRequest('');
       setIsAnonymous(false);
+      toast.success("Prayer request posted!");
     } catch (error) {
       console.error("Error submitting prayer request:", error);
+      toast.error("Failed to post prayer request.");
     } finally {
       setIsSubmitting(false);
     }
@@ -127,45 +125,78 @@ export default function PrayerWall() {
     setConfirmDeleteId(null);
     
     try {
-      await deleteDoc(doc(db, 'prayer_requests', id));
+      await api.delete(`/api/prayer-requests/${id}`);
+      setRequests(prev => prev.filter(r => r.id !== id));
+      toast.success("Prayer request deleted.");
     } catch (error) {
       console.error("Error deleting prayer request:", error);
-      alert("Failed to delete prayer request.");
+      toast.error("Failed to delete prayer request.");
     }
   };
 
   const handlePray = async (id: string) => {
-    if (!auth.currentUser) {
-      alert("Please sign in to pray for others.");
-      return;
-    }
-
-    const prayerRef = doc(db, `prayer_requests/${id}/prayers`, auth.currentUser.uid);
-    const prayerDoc = await getDoc(prayerRef);
-
-    if (prayerDoc.exists()) {
-      alert("You have already prayed for this request.");
+    if (!user) {
+      toast.error("Please sign in to pray for others.");
       return;
     }
 
     try {
-      const batch = writeBatch(db);
-      const requestRef = doc(db, 'prayer_requests', id);
+      const result = await api.post(`/api/prayer-requests/${id}/pray`, {});
       
-      batch.set(prayerRef, {
-        uid: auth.currentUser.uid,
-        createdAt: serverTimestamp()
-      });
-      
-      batch.update(requestRef, {
-        prayCount: increment(1)
+      setUserPrayers(prev => {
+        const next = new Set(prev);
+        if (result.prayed) next.add(id);
+        else next.delete(id);
+        return next;
       });
 
-      await batch.commit();
-      setUserPrayers(prev => new Set(prev).add(id));
+      setRequests(prev => prev.map(r => 
+        r.id === id ? { ...r, prayCount: r.prayCount + (result.prayed ? 1 : -1) } : r
+      ));
+
+      toast.success(result.prayed ? "Prayer registered!" : "Prayer removed.");
     } catch (error) {
-      console.error("Error praying for request:", error);
-      alert("Failed to register your prayer. Please try again.");
+      console.error("Error updating prayer status:", error);
+      toast.error("Failed to update prayer status.");
+    }
+  };
+
+  const handleTypePrayer = async (id: string) => {
+    if (!typedPrayer.trim() || !user) return;
+    setIsTypingSubmitting(true);
+
+    try {
+      const moderationResult = await moderateContent(typedPrayer);
+      if (!moderationResult.isApproved) {
+        toast.error(`Prayer rejected: ${moderationResult.reason}`);
+        setIsTypingSubmitting(false);
+        return;
+      }
+
+      await api.post(`/api/prayer-requests/${id}/typed-prayers`, {
+        text: typedPrayer,
+        authorName: user.user_metadata?.full_name || 'Anonymous'
+      });
+
+      setTypedPrayer('');
+      setTypingPrayerId(null);
+      toast.success("Your prayer has been shared!");
+    } catch (error) {
+      console.error("Error submitting typed prayer:", error);
+      toast.error("Failed to share prayer.");
+    } finally {
+      setIsTypingSubmitting(false);
+    }
+  };
+
+  const fetchTypedPrayers = async (id: string) => {
+    setViewingPrayersId(id);
+    try {
+      const prayers = await api.get(`/api/prayer-requests/${id}/typed-prayers`);
+      setTypedPrayersList(prayers);
+    } catch (error) {
+      console.error("Error fetching typed prayers:", error);
+      toast.error("Failed to load prayers.");
     }
   };
 
@@ -180,7 +211,7 @@ export default function PrayerWall() {
         <div className="mb-8 p-12 mx-4 sm:mx-0 bg-sage-light/10 rounded-[2rem] border border-sage/5 flex justify-center">
           <Loader2 className="w-6 h-6 text-sage animate-spin" />
         </div>
-      ) : auth.currentUser ? (
+      ) : user ? (
         <div className="mb-8 p-6 sm:p-8 mx-4 sm:mx-0 bg-sage-light/20 rounded-[2rem] border border-sage/10">
           <h2 className="serif text-xl sm:text-2xl font-semibold text-sage-dark mb-4">Share a Request</h2>
           <textarea
@@ -223,10 +254,17 @@ export default function PrayerWall() {
             animate={{ opacity: 1, y: 0 }}
             className="p-6 sm:p-8 bg-white border border-sage/10 rounded-3xl shadow-sm hover:shadow-xl hover:shadow-sage/5 transition-all relative group"
           >
-            <p className="serif text-lg sm:text-xl text-sage-dark mb-3 leading-relaxed">"{request.content}"</p>
-            <p className="text-xs text-ink/40 mb-6 italic">
-              — {request.isAnonymous ? 'Anonymous' : (request.authorName || 'Unknown')}
-            </p>
+            <p className="serif text-lg sm:text-xl text-sage-dark mb-1 leading-relaxed">"{request.content}"</p>
+            <div className="flex items-center gap-2 mb-6">
+              <span className="text-[10px] text-ink/40 italic">
+                — {request.isAnonymous ? 'Anonymous' : (request.authorName || 'Unknown')}
+              </span>
+              {request.createdAt && (
+                <span className="text-[10px] text-ink/20 font-medium">
+                  • {new Date(request.createdAt).toLocaleString()}
+                </span>
+              )}
+            </div>
             <div className="flex items-center justify-between border-t border-sage/10 pt-4">
               <span className="text-xs font-medium text-ink/40">
                 {request.prayCount} {request.prayCount === 1 ? 'person is' : 'people are'} praying
@@ -241,8 +279,40 @@ export default function PrayerWall() {
                 <Heart size={18} className={userPrayers.has(request.id) ? 'fill-white' : ''} />
                 <span>Pray</span>
               </button>
+              <button
+                onClick={() => setTypingPrayerId(request.id)}
+                className="flex items-center gap-2 font-bold px-4 py-2 rounded-xl text-sage hover:bg-sage-light transition-all text-sm"
+                title="Type a Prayer"
+              >
+                <MessageSquare size={18} />
+                <span>Type Prayer</span>
+              </button>
+              <button
+                onClick={async () => {
+                  const shareText = `Prayer Request: "${request.content}" — ${request.authorName}`;
+                  try {
+                    if (navigator.share) {
+                      await navigator.share({
+                        title: 'Prayer Request Share',
+                        text: shareText,
+                        url: window.location.href
+                      });
+                    } else {
+                      await navigator.clipboard.writeText(shareText);
+                      toast.success('Prayer request copied to clipboard!');
+                    }
+                  } catch (err) {
+                    console.error('Share failed:', err);
+                  }
+                }}
+                className="flex items-center gap-2 font-bold px-4 py-2 rounded-xl text-sage hover:bg-sage-light transition-all text-sm"
+                title="Share Request"
+              >
+                <Share2 size={18} />
+                <span>Share</span>
+              </button>
             </div>
-            {(isAdmin || (auth.currentUser && auth.currentUser.uid === request.authorUid)) && (
+            {(isAdmin || (user && user.id === request.authorUid)) && (
               <button 
                 onClick={() => handleDelete(request.id)}
                 className="absolute top-6 right-6 p-2 text-ink/20 hover:text-destructive transition-colors"
@@ -251,6 +321,14 @@ export default function PrayerWall() {
                 <Trash2 size={18} />
               </button>
             )}
+            <div className="mt-4">
+              <button 
+                onClick={() => fetchTypedPrayers(request.id)}
+                className="text-xs text-sage hover:underline"
+              >
+                View prayers for this request
+              </button>
+            </div>
           </motion.div>
         ))}
         {requests.length === 0 && (
@@ -282,6 +360,72 @@ export default function PrayerWall() {
               >
                 Delete
               </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Type Prayer Modal */}
+      {typingPrayerId && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white p-8 rounded-[2.5rem] max-w-md w-full shadow-2xl"
+          >
+            <h3 className="serif text-2xl font-semibold text-sage-dark mb-4">Type a Prayer</h3>
+            <textarea
+              value={typedPrayer}
+              onChange={(e) => setTypedPrayer(e.target.value)}
+              className="w-full h-40 p-4 rounded-xl border border-sage/20 bg-cream/30 focus:bg-white focus:ring-2 focus:ring-sage/30 transition-all resize-none mb-6"
+              placeholder="Write a short prayer for this request..."
+              disabled={isTypingSubmitting}
+            />
+            <div className="flex gap-3">
+              <button 
+                onClick={() => setTypingPrayerId(null)}
+                className="flex-1 px-6 py-3 rounded-xl border border-sage/20 font-medium hover:bg-sage-light transition-colors"
+                disabled={isTypingSubmitting}
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={() => handleTypePrayer(typingPrayerId)}
+                disabled={isTypingSubmitting || !typedPrayer.trim()}
+                className="flex-1 bg-sage text-white px-6 py-3 rounded-xl font-medium hover:bg-sage-dark transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                <Send size={18} />
+                {isTypingSubmitting ? 'Sharing...' : 'Share Prayer'}
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* View Prayers Modal */}
+      {viewingPrayersId && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white p-8 rounded-[2.5rem] max-w-lg w-full shadow-2xl max-h-[80vh] flex flex-col"
+          >
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="serif text-2xl font-semibold text-sage-dark">Prayers</h3>
+              <button onClick={() => setViewingPrayersId(null)} className="text-ink/40 hover:text-ink">Close</button>
+            </div>
+            <div className="flex-1 overflow-y-auto space-y-4 pr-2">
+              {typedPrayersList.length > 0 ? typedPrayersList.map(p => (
+                <div key={p.id} className="p-4 bg-cream/30 rounded-2xl border border-sage/10">
+                  <p className="text-ink/80 mb-2 italic">"{p.text}"</p>
+                  <div className="flex justify-between items-center text-[10px] text-ink/40">
+                    <span>— {p.authorName}</span>
+                    <span>{new Date(p.createdAt).toLocaleDateString()}</span>
+                  </div>
+                </div>
+              )) : (
+                <p className="text-center text-ink/40 italic py-8">No typed prayers yet.</p>
+              )}
             </div>
           </motion.div>
         </div>
