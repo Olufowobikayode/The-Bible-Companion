@@ -113,7 +113,7 @@ export default function NotificationCenter() {
                       <div className="flex gap-3">
                         <div className="mt-1">{getIcon(n.type)}</div>
                         <div className="flex-grow">
-                          <p className={`text-sm ${!n.read ? 'font-bold' : 'font-medium'} text-ink`}>{n.title}</p>
+                          <p className={`text-sm ${!n?.read ? 'font-bold' : 'font-medium'} text-ink`}>{n?.title || ''}</p>
                           <p className="text-xs text-ink/60 mt-1">{n.message}</p>
                           <div className="flex justify-between items-center mt-2">
                             <span className="text-[10px] text-ink/20">

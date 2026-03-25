@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { api } from '../lib/api';
 import { motion } from 'motion/react';
@@ -17,26 +18,13 @@ interface Group {
   createdAt: string;
 }
 
-export default function Groups() {
+export default function Community() {
   const { user } = useAuth();
   const [groups, setGroups] = useState<Group[]>([]);
   const [newGroupName, setNewGroupName] = useState('');
   const [newGroupDescription, setNewGroupDescription] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [user, setUser] = useState<any>(null);
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
 
   useEffect(() => {
     fetchGroups();
@@ -209,8 +197,11 @@ export default function Groups() {
               className="bg-white p-6 sm:p-8 rounded-3xl border border-sage/10 shadow-sm relative group flex flex-col h-full"
             >
               <div className="flex-grow">
-                <h3 className="serif text-xl font-semibold text-sage-dark mb-2">{group.name}</h3>
+                <Link to={`/community/${group.id}`}>
+                  <h3 className="serif text-xl font-semibold text-sage-dark mb-2 hover:text-sage transition-colors">{group.name}</h3>
+                </Link>
                 <p className="text-ink/70 text-sm mb-4 line-clamp-3">{group.description}</p>
+// ...
                 <div className="flex items-center gap-2 text-xs text-ink/40 mb-6">
                   <Users className="w-4 h-4" />
                   <span>{group.members.length} {group.members.length === 1 ? 'member' : 'members'}</span>

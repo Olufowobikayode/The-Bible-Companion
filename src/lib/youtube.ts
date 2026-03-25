@@ -22,7 +22,7 @@ export const searchYouTube = async (query: string, maxResults = 5) => {
       id: item.id.videoId,
       title: item.snippet.title,
       description: item.snippet.description,
-      thumbnail: item.snippet.thumbnails.high.url,
+      thumbnail: item.snippet?.thumbnails?.high?.url,
       channelTitle: item.snippet.channelTitle,
     }));
   } catch (error) {

@@ -85,7 +85,7 @@ export default function Layout({ children }: LayoutProps) {
         { name: 'Community Tabernacle', path: '/forum', icon: MessageSquare },
         { name: 'Cloud of Witnesses', path: '/testimonies', icon: Heart },
         { name: 'Search Brethren', path: '/search', icon: Search },
-        { name: 'Prayer Groups', path: '/groups', icon: UserIcon },
+        { name: 'Prayer Groups', path: '/community', icon: UserIcon },
         { name: 'Brethren', path: '/friends', icon: UserIcon },
         { name: 'Word for Someone', path: '/messages', icon: Send },
       ]
@@ -259,8 +259,8 @@ export default function Layout({ children }: LayoutProps) {
                   )}
                   
                   {navGroups.map((group) => (
-                    <div key={group.title} className="space-y-3">
-                      <h3 className="text-[10px] font-bold text-sage uppercase tracking-[0.2em] px-4">{group.title}</h3>
+                    <div key={group?.title || ''} className="space-y-3">
+                      <h3 className="text-[10px] font-bold text-sage uppercase tracking-[0.2em] px-4">{group?.title || ''}</h3>
                       <div className="grid grid-cols-1 gap-1">
                         {group.items.map((item) => (
                           <Link

@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Search, Play, Loader2, Music, Radio } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Search, Play, Loader2, Music, Radio, X } from 'lucide-react';
 import { searchYouTube } from '../lib/youtube';
 import YouTube from 'react-youtube';
 import { toast } from 'sonner';
@@ -13,22 +13,30 @@ export default function Media() {
   const [liveWorship, setLiveWorship] = useState<{ song: WorshipSong; startTime: number } | null>(null);
   const [isLiveMode, setIsLiveMode] = useState(true);
 
-  useEffect(() => {
-    const fetchLiveWorship = async () => {
-      try {
-        const res = await fetch('/api/worship/current');
-        const data = await res.json();
-        setLiveWorship(data);
-      } catch (error) {
-        console.error("Error fetching live worship:", error);
+  const fetchLiveWorship = useCallback(async (retries = 3) => {
+    try {
+      const res = await fetch('/api/worship/current');
+      if (res.status === 429 && retries > 0) {
+        setTimeout(() => fetchLiveWorship(retries - 1), 5000);
+        return;
       }
-    };
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Failed to fetch live worship: ${text}`);
+      }
+      const data = await res.json();
+      setLiveWorship(data);
+    } catch (error) {
+      console.error("Error fetching live worship:", error);
+    }
+  }, []);
 
+  useEffect(() => {
     fetchLiveWorship();
-    const interval = setInterval(fetchLiveWorship, 10000); // Sync every 10s
+    const interval = setInterval(fetchLiveWorship, 60000); // Sync every 60s
     
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchLiveWorship]);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -90,21 +98,24 @@ export default function Media() {
             
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-center">
               <div className="lg:col-span-2 aspect-video rounded-2xl overflow-hidden shadow-2xl bg-black ring-1 ring-sage/10">
-                <YouTube 
-                  videoId={liveWorship.song.id} 
-                  opts={{ 
-                    width: '100%', 
-                    height: '100%', 
-                    playerVars: { 
-                      autoplay: 1, 
-                      start: Math.floor(liveWorship.startTime),
-                      controls: 1,
-                      modestbranding: 1,
-                      rel: 0
-                    } 
-                  }} 
-                  className="w-full h-full"
-                />
+                {liveWorship.song.id && (
+                  <YouTube 
+                    videoId={liveWorship.song.id} 
+                    opts={{ 
+                      width: '100%', 
+                      height: '100%', 
+                      playerVars: { 
+                        autoplay: 1, 
+                        start: Math.floor(liveWorship.startTime),
+                        controls: 1,
+                        modestbranding: 1,
+                        rel: 0
+                      } 
+                    }} 
+                    onEnd={() => fetchLiveWorship()}
+                    className="w-full h-full"
+                  />
+                )}
               </div>
               <div className="space-y-6">
                 <div className="bg-white/50 backdrop-blur-sm p-6 rounded-2xl border border-sage/10">
@@ -166,18 +177,19 @@ export default function Media() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             {results.map((video) => (
               <div 
-                key={video.id.videoId} 
+                key={video.id} 
                 className="bg-white rounded-2xl overflow-hidden shadow-sm border border-sage/10 hover:shadow-xl transition-all cursor-pointer group hover:-translate-y-1"
                 onClick={() => {
-                  setActiveVideo(video.id.videoId);
+                  setActiveVideo(video.id);
                   window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
               >
                 <div className="relative aspect-video">
                   <img 
-                    src={video.snippet.thumbnails.medium.url} 
-                    alt={video.snippet.title}
+                    src={video.thumbnail} 
+                    alt={video.title}
                     className="w-full h-full object-cover"
+                    referrerPolicy="no-referrer"
                   />
                   <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition-colors flex items-center justify-center">
                     <div className="w-12 h-12 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center text-white opacity-0 group-hover:opacity-100 scale-75 group-hover:scale-100 transition-all">
@@ -186,8 +198,8 @@ export default function Media() {
                   </div>
                 </div>
                 <div className="p-5">
-                  <h3 className="font-bold text-ink line-clamp-2 mb-2 group-hover:text-sage transition-colors" dangerouslySetInnerHTML={{ __html: video.snippet.title }} />
-                  <p className="text-xs font-bold text-sage uppercase tracking-widest">{video.snippet.channelTitle}</p>
+                  <h3 className="font-bold text-ink line-clamp-2 mb-2 group-hover:text-sage transition-colors" dangerouslySetInnerHTML={{ __html: video.title || '' }} />
+                  <p className="text-xs font-bold text-sage uppercase tracking-widest">{video.channelTitle}</p>
                 </div>
               </div>
             ))}

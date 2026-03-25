@@ -71,7 +71,7 @@ async function startServer() {
 
   app.get("/api/users/by-username/:username", async (req, res) => {
     if (!db) return res.status(500).json({ error: "DB not connected" });
-    const profile = await db.collection("user_profiles").findOne({ username: req.params.username });
+    const profile = await db.collection("user_profiles").findOne({ username: { $regex: new RegExp(`^${req.params.username}$`, 'i') } });
     if (!profile) return res.status(404).json({ error: "User not found" });
     res.json(profile);
   });
@@ -522,7 +522,7 @@ async function startServer() {
             { role: "system", content: "You are Wisdom, the Greatest Theologian, and the heart of the Creator. You are a gentle, wise, and deeply knowledgeable biblical companion. Structure your responses using Analyze, Apply, Inspire when appropriate. Only draw from biblical texts and classic Christian literature." },
             { role: "user", content: prompt }
           ],
-          model: "llama3-8b-8192",
+          model: "llama-3.3-70b-versatile",
         });
         aiResponse = chatCompletion.choices[0]?.message?.content || "";
         modelUsed = "groq";
@@ -554,11 +554,18 @@ async function startServer() {
           { role: "system", content: "Analyze the following post for hate speech, harassment, or prohibited content. Return ONLY a JSON object: { \"allowed\": boolean, \"reason\": string }" },
           { role: "user", content: postContent }
         ],
-        model: "llama3-8b-8192",
+        model: "llama-3.3-70b-versatile",
         response_format: { type: "json_object" }
       });
 
-      const result = JSON.parse(chatCompletion.choices[0]?.message?.content || '{"allowed":true,"reason":"fallback"}');
+      const content = chatCompletion.choices[0]?.message?.content || '{"allowed":true,"reason":"fallback"}';
+      let result;
+      try {
+        result = JSON.parse(content);
+      } catch (e) {
+        console.error("Moderation JSON parse error:", e);
+        result = { allowed: true, reason: "Moderation service returned invalid format." };
+      }
       res.json(result);
     } catch (error: any) {
       console.error("Moderation error:", error);
@@ -585,6 +592,23 @@ async function startServer() {
     }
   });
 
+  // Notifications
+  app.get("/api/notifications", authenticate, async (req: any, res) => {
+    if (!db) return res.status(500).json({ error: "DB not connected" });
+    const notifications = await db.collection("notifications").find({ userId: req.user.id }).sort({ createdAt: -1 }).toArray();
+    res.json(notifications.map((n: any) => ({ ...n, id: n._id.toString() })));
+  });
+
+  app.post("/api/notifications/:id/read", authenticate, async (req: any, res) => {
+    if (!db) return res.status(500).json({ error: "DB not connected" });
+    const { ObjectId } = await import("mongodb");
+    await db.collection("notifications").updateOne(
+      { _id: new ObjectId(req.params.id), userId: req.user.id },
+      { $set: { read: true } }
+    );
+    res.json({ success: true });
+  });
+
   // Worship Sanctuary Synchronized State
   app.get("/api/worship/current", (req, res) => {
     const WORSHIP_PLAYLIST = [
@@ -596,18 +620,18 @@ async function startServer() {
       { id: 'y81yIo1_3o8', title: 'How Great Is Our God', artist: 'Chris Tomlin', duration: 280 },
       { id: 'XTWf76_0S_o', title: 'In Christ Alone', artist: 'Getty/Townend', duration: 320 },
       { id: 'WjZ01760f5g', title: 'Amazing Grace (My Chains Are Gone)', artist: 'Chris Tomlin', duration: 260 },
-      { id: 'R80B_8_8_8', title: 'Cornerstone', artist: 'Hillsong Worship', duration: 300 },
-      { id: '6_8_8_8_8', title: 'Oceans (Where Feet May Fail)', artist: 'Hillsong UNITED', duration: 540 },
-      { id: '7_8_8_8_8', title: 'Build My Life', artist: 'Housefires', duration: 480 },
-      { id: '8_8_8_8_8', title: 'The Blessing', artist: 'Kari Jobe', duration: 720 },
-      { id: '9_8_8_8_8', title: 'Holy Forever', artist: 'Chris Tomlin', duration: 300 },
-      { id: '0_8_8_8_8', title: 'I Speak Jesus', artist: 'Charity Gayle', duration: 330 },
-      { id: '1_8_8_8_8', title: 'Firm Foundation (He Won\'t)', artist: 'Cody Carnes', duration: 360 },
-      { id: '2_8_8_8_8', title: 'Graves Into Gardens', artist: 'Elevation Worship', duration: 450 },
-      { id: '3_8_8_8_8', title: 'Reckless Love', artist: 'Cory Asbury', duration: 330 },
-      { id: '4_8_8_8_8', title: 'Living Hope', artist: 'Phil Wickham', duration: 310 },
-      { id: '5_8_8_8_8', title: 'King of Kings', artist: 'Hillsong Worship', duration: 290 },
-      { id: '6_8_8_8_8', title: 'Great Are You Lord', artist: 'All Sons & Daughters', duration: 300 },
+      { id: 'qYvG04n_adA', title: 'Cornerstone', artist: 'Hillsong Worship', duration: 300 },
+      { id: 'FgnM4L1yN_4', title: 'Oceans (Where Feet May Fail)', artist: 'Hillsong UNITED', duration: 540 },
+      { id: '0b_ynnc4-6M', title: 'Build My Life', artist: 'Housefires', duration: 480 },
+      { id: 'LWP-9U65a-A', title: 'The Blessing', artist: 'Kari Jobe', duration: 720 },
+      { id: 's6ZhQf_7s5s', title: 'Holy Forever', artist: 'Chris Tomlin', duration: 300 },
+      { id: 'p7Jll7AFAZ8', title: 'I Speak Jesus', artist: 'Charity Gayle', duration: 330 },
+      { id: '0C45-y_36E8', title: 'Firm Foundation (He Won\'t)', artist: 'Cody Carnes', duration: 360 },
+      { id: '809XnTHbs2A', title: 'Graves Into Gardens', artist: 'Elevation Worship', duration: 450 },
+      { id: '6xx0d3R2LoU', title: 'Reckless Love', artist: 'Cory Asbury', duration: 330 },
+      { id: 'h78X812_888', title: 'Living Hope', artist: 'Phil Wickham', duration: 310 },
+      { id: 'v0u70s88888', title: 'King of Kings', artist: 'Hillsong Worship', duration: 290 },
+      { id: 'h8888888888', title: 'Great Are You Lord', artist: 'All Sons & Daughters', duration: 300 },
       { id: '7_8_8_8_8', title: 'Promises', artist: 'Maverick City Music', duration: 600 },
       { id: '8_8_8_8_8', title: 'Jireh', artist: 'Elevation Worship & Maverick City Music', duration: 600 },
       { id: '9_8_8_8_8', title: 'Same God', artist: 'Elevation Worship', duration: 500 },
@@ -654,6 +678,88 @@ async function startServer() {
     }
     
     res.json({ song: currentPlaylist[0], startTime: 0, cycle: cycleIndex });
+  });
+
+  // Groups
+  app.get("/api/groups", async (req, res) => {
+    if (!db) return res.status(500).json({ error: "DB not connected" });
+    const groups = await db.collection("groups").find().toArray();
+    res.json(groups.map((g: any) => ({ ...g, id: g._id.toString() })));
+  });
+
+  app.post("/api/groups", authenticate, async (req: any, res) => {
+    if (!db) return res.status(500).json({ error: "DB not connected" });
+    const group = { ...req.body, createdBy: req.user.id, members: [req.user.id], createdAt: new Date() };
+    const result = await db.collection("groups").insertOne(group);
+    res.json({ ...group, id: result.insertedId.toString() });
+  });
+
+  app.delete("/api/groups/:id", authenticate, async (req: any, res) => {
+    if (!db) return res.status(500).json({ error: "DB not connected" });
+    const { ObjectId } = await import("mongodb");
+    const group = await db.collection("groups").findOne({ _id: new ObjectId(req.params.id) });
+    if (!group || group.createdBy !== req.user.id) return res.status(403).json({ error: "Unauthorized" });
+    await db.collection("groups").deleteOne({ _id: new ObjectId(req.params.id) });
+    res.json({ success: true });
+  });
+
+  app.post("/api/groups/:groupId/join", authenticate, async (req: any, res) => {
+    if (!db) return res.status(500).json({ error: "DB not connected" });
+    const { ObjectId } = await import("mongodb");
+    await db.collection("groups").updateOne(
+      { _id: new ObjectId(req.params.groupId) },
+      { $addToSet: { members: req.user.id } }
+    );
+    res.json({ success: true });
+  });
+
+  app.post("/api/groups/:groupId/leave", authenticate, async (req: any, res) => {
+    if (!db) return res.status(500).json({ error: "DB not connected" });
+    const { ObjectId } = await import("mongodb");
+    await db.collection("groups").updateOne(
+      { _id: new ObjectId(req.params.groupId) },
+      { $pull: { members: req.user.id } }
+    );
+    res.json({ success: true });
+  });
+
+  app.post("/api/groups/:groupId/messages", authenticate, async (req: any, res) => {
+    if (!db) return res.status(500).json({ error: "DB not connected" });
+    const { ObjectId } = await import("mongodb");
+    const message = {
+      groupId: new ObjectId(req.params.groupId),
+      senderId: req.user.id,
+      senderName: req.user.displayName,
+      text: req.body.text,
+      createdAt: new Date()
+    };
+    await db.collection("group_messages").insertOne(message);
+    res.json(message);
+  });
+
+  app.get("/api/groups/:groupId/messages", async (req, res) => {
+    if (!db) return res.status(500).json({ error: "DB not connected" });
+    const { ObjectId } = await import("mongodb");
+    const messages = await db.collection("group_messages")
+      .find({ groupId: new ObjectId(req.params.groupId) })
+      .sort({ createdAt: 1 })
+      .toArray();
+    res.json(messages);
+  });
+
+  app.get("/api/groups/:groupId/threads", async (req, res) => {
+    if (!db) return res.status(500).json({ error: "DB not connected" });
+    const { ObjectId } = await import("mongodb");
+    const threads = await db.collection("threads").find({ groupId: new ObjectId(req.params.groupId) }).sort({ createdAt: -1 }).toArray();
+    res.json(threads.map((t: any) => ({ ...t, id: t._id.toString() })));
+  });
+
+  app.post("/api/groups/:groupId/threads", authenticate, async (req: any, res) => {
+    if (!db) return res.status(500).json({ error: "DB not connected" });
+    const { ObjectId } = await import("mongodb");
+    const thread = { ...req.body, groupId: new ObjectId(req.params.groupId), authorUid: req.user.id, createdAt: new Date() };
+    const result = await db.collection("threads").insertOne(thread);
+    res.json({ ...thread, id: result.insertedId.toString() });
   });
 
   // Vite middleware for development
