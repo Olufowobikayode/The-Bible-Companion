@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc, getDoc, updateDoc, increment } from 'firebase/firestore';
-import { db, auth } from '../firebase';
+import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
 import { Trash2, MessageSquareHeart } from 'lucide-react';
@@ -34,28 +34,49 @@ export default function Testimonies() {
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState('');
   const [isCommenting, setIsCommenting] = useState(false);
+  const [user, setUser] = useState<any>(null);
+
+  const fetchTestimonies = async () => {
+    try {
+      const data = await api.get('/api/testimonies');
+      setTestimonies(data);
+    } catch (error) {
+      console.error("Error fetching testimonies:", error);
+    }
+  };
 
   useEffect(() => {
-    const q = query(collection(db, 'testimonies'), orderBy('createdAt', 'desc'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      setTestimonies(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Testimony)));
-    });
+    fetchTestimonies();
 
-    const checkAdmin = async () => {
-      if (auth.currentUser) {
-        if (auth.currentUser.email === 'kayodeolufowobi709@gmail.com') {
+    const checkAdmin = async (u: any) => {
+      if (u) {
+        if (u.email === 'kayodeolufowobi709@gmail.com') {
           setIsAdmin(true);
           return;
         }
-        const userDoc = await getDoc(doc(db, 'user_profiles', auth.currentUser.uid));
-        if (userDoc.exists() && userDoc.data().role === 'admin') {
-          setIsAdmin(true);
+        try {
+          const profile = await api.get(`/api/user-profiles/${u.id}`);
+          if (profile?.role === 'admin') {
+            setIsAdmin(true);
+          }
+        } catch (error) {
+          console.error("Error checking admin status:", error);
         }
       }
     };
-    checkAdmin();
 
-    return () => unsubscribe();
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      if (session?.user) checkAdmin(session.user);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      if (session?.user) checkAdmin(session.user);
+      else setIsAdmin(false);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
@@ -64,26 +85,33 @@ export default function Testimonies() {
       return;
     }
 
-    const q = query(collection(db, 'testimonies', activeCommentsId, 'comments'), orderBy('createdAt', 'asc'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      setComments(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Comment)));
-    });
-
-    return () => unsubscribe();
+    const fetchComments = async () => {
+      try {
+        const data = await api.get(`/api/testimonies/${activeCommentsId}/comments`);
+        setComments(data);
+      } catch (error) {
+        console.error("Error fetching comments:", error);
+      }
+    };
+    fetchComments();
   }, [activeCommentsId]);
 
   const handleReaction = async (testimonyId: string, emoji: string) => {
-    if (!auth.currentUser) {
+    if (!user) {
       toast.error("Please sign in to react.");
       return;
     }
 
     try {
-      const testimonyRef = doc(db, 'testimonies', testimonyId);
-      const field = `reactions.${emoji}`;
-      await updateDoc(testimonyRef, {
-        [field]: increment(1)
-      });
+      await api.post(`/api/testimonies/${testimonyId}/reactions`, { emoji });
+      setTestimonies(prev => prev.map(t => {
+        if (t.id === testimonyId) {
+          const reactions = { ...(t.reactions || {}) };
+          reactions[emoji] = (reactions[emoji] || 0) + 1;
+          return { ...t, reactions };
+        }
+        return t;
+      }));
     } catch (error) {
       console.error("Error adding reaction:", error);
     }
@@ -91,7 +119,7 @@ export default function Testimonies() {
 
   const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newComment.trim() || !auth.currentUser || !activeCommentsId) return;
+    if (!newComment.trim() || !user || !activeCommentsId) return;
 
     setIsCommenting(true);
     try {
@@ -102,13 +130,12 @@ export default function Testimonies() {
         return;
       }
 
-      await addDoc(collection(db, 'testimonies', activeCommentsId, 'comments'), {
+      const comment = await api.post(`/api/testimonies/${activeCommentsId}/comments`, {
         content: newComment,
-        authorName: auth.currentUser.displayName || 'Anonymous',
-        authorUid: auth.currentUser.uid,
-        createdAt: serverTimestamp()
+        authorName: user.user_metadata?.full_name || user.email?.split('@')[0] || 'Anonymous',
       });
 
+      setComments(prev => [...prev, comment]);
       setNewComment('');
       toast.success("Comment added!");
     } catch (error) {
@@ -121,7 +148,7 @@ export default function Testimonies() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTestimony.trim() || !auth.currentUser) return;
+    if (!newTestimony.trim() || !user) return;
 
     setIsSubmitting(true);
     try {
@@ -133,14 +160,13 @@ export default function Testimonies() {
         return;
       }
 
-      await addDoc(collection(db, 'testimonies'), {
+      const testimony = await api.post('/api/testimonies', {
         content: newTestimony,
-        authorUid: auth.currentUser.uid,
-        authorName: auth.currentUser.displayName || 'Anonymous',
+        authorName: user.user_metadata?.full_name || user.email?.split('@')[0] || 'Anonymous',
         isAnonymous,
-        createdAt: serverTimestamp()
       });
       
+      setTestimonies(prev => [testimony, ...prev]);
       setNewTestimony('');
       setIsAnonymous(false);
       toast.success("Testimony shared successfully!");
@@ -155,7 +181,8 @@ export default function Testimonies() {
   const handleDelete = async (id: string) => {
     if (window.confirm("Are you sure you want to delete this testimony?")) {
       try {
-        await deleteDoc(doc(db, 'testimonies', id));
+        await api.delete(`/api/testimonies/${id}`);
+        setTestimonies(prev => prev.filter(t => t.id !== id));
         toast.success("Testimony deleted");
       } catch (error) {
         console.error("Error deleting testimony:", error);
@@ -176,7 +203,7 @@ export default function Testimonies() {
         </p>
       </div>
 
-      {auth.currentUser ? (
+      {user ? (
         <div className="bg-sage-light/20 p-6 sm:p-8 rounded-[2rem] border border-sage/10 mb-12">
           <h2 className="serif text-xl font-semibold text-sage-dark mb-4">Share Your Testimony</h2>
           <form onSubmit={handleSubmit}>
@@ -283,7 +310,7 @@ export default function Testimonies() {
                   ))}
                 </div>
 
-                {auth.currentUser ? (
+                {user ? (
                   <form onSubmit={handleAddComment} className="flex gap-2">
                     <input
                       type="text"
@@ -307,7 +334,7 @@ export default function Testimonies() {
               </div>
             )}
             
-            {(isAdmin || (auth.currentUser && auth.currentUser.uid === testimony.authorUid)) && (
+            {(isAdmin || (user && user.id === testimony.authorUid)) && (
               <button 
                 onClick={() => handleDelete(testimony.id)}
                 className="absolute top-6 right-6 p-2 text-ink/20 hover:text-destructive transition-colors opacity-0 group-hover:opacity-100"

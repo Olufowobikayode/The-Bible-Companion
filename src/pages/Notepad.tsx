@@ -1,13 +1,11 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { db, auth } from '../firebase';
-import { onAuthStateChanged } from 'firebase/auth';
-import { collection, query, where, orderBy, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 import { PenLine, Trash2, Sparkles, Save, Plus, ChevronRight, Loader2, BookOpen, Share2 } from 'lucide-react';
 import { analyzeNote } from '../lib/gemini';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-
 import { moderateContent } from '../lib/moderation';
 
 interface Note {
@@ -34,40 +32,40 @@ export default function Notepad() {
   const [content, setContent] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<any>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, (u) => {
+    const fetchNotes = async () => {
+      try {
+        const data = await api.get('/api/notes');
+        setNotes(data);
+      } catch (error) {
+        console.error("Error fetching notes:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
       setIsAuthLoading(false);
+      if (session?.user) fetchNotes();
     });
 
-    let unsubscribe: (() => void) | undefined;
-
-    if (auth.currentUser) {
-      const q = query(
-        collection(db, 'notes'),
-        where('userId', '==', auth.currentUser.uid),
-        orderBy('updatedAt', 'desc')
-      );
-
-      unsubscribe = onSnapshot(q, (snapshot) => {
-        const notesData = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        })) as Note[];
-        setNotes(notesData);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      setIsAuthLoading(false);
+      if (session?.user) fetchNotes();
+      else {
+        setNotes([]);
         setLoading(false);
-      });
-    } else {
-      setLoading(false);
-    }
+      }
+    });
 
-    return () => {
-      unsubscribeAuth();
-      if (unsubscribe) unsubscribe();
-    };
+    return () => subscription.unsubscribe();
   }, []);
 
   // Sync selectedNote with the latest data from the notes list
@@ -86,13 +84,11 @@ export default function Notepad() {
   }, [notes, isEditing]);
 
   const handleSave = async () => {
-    if (!auth.currentUser || !content.trim()) return;
+    if (!user || !content.trim()) return;
 
     const noteData = {
       title: title.trim() || 'Untitled Note',
       content: content.trim(),
-      userId: auth.currentUser.uid,
-      updatedAt: serverTimestamp(),
     };
 
     try {
@@ -104,19 +100,13 @@ export default function Notepad() {
       }
 
       if (selectedNote) {
-        await updateDoc(doc(db, 'notes', selectedNote.id), noteData);
+        const updatedNote = await api.put(`/api/notes/${selectedNote.id}`, noteData);
+        setNotes(prev => prev.map(n => n.id === selectedNote.id ? updatedNote : n));
         toast.success('Note updated successfully.');
       } else {
-        const docRef = await addDoc(collection(db, 'notes'), {
-          ...noteData,
-          createdAt: serverTimestamp(),
-        });
-        // Select the new note immediately
-        setSelectedNote({
-          id: docRef.id,
-          ...noteData,
-          createdAt: new Date(),
-        } as any);
+        const newNote = await api.post('/api/notes', noteData);
+        setNotes(prev => [newNote, ...prev]);
+        setSelectedNote(newNote);
         toast.success('Note created successfully.');
       }
       setIsEditing(false);
@@ -136,7 +126,8 @@ export default function Notepad() {
     const id = confirmDeleteId;
     setConfirmDeleteId(null);
     try {
-      await deleteDoc(doc(db, 'notes', id));
+      await api.delete(`/api/notes/${id}`);
+      setNotes(prev => prev.filter(n => n.id !== id));
       if (selectedNote?.id === id) {
         setSelectedNote(null);
         setIsEditing(false);
@@ -149,39 +140,16 @@ export default function Notepad() {
   };
 
   const handleSmartAssist = async () => {
-    if (!content.trim()) return;
+    if (!content.trim() || !selectedNote) return;
     
-    let currentNoteId = selectedNote?.id;
-    
-    // If it's a new note, we must save it first to have an ID for the analysis update
-    if (!currentNoteId) {
-      if (!auth.currentUser) return;
-      const noteData = {
-        title: title.trim() || 'Untitled Note',
-        content: content.trim(),
-        userId: auth.currentUser.uid,
-        updatedAt: serverTimestamp(),
-        createdAt: serverTimestamp(),
-      };
-      try {
-        const docRef = await addDoc(collection(db, 'notes'), noteData);
-        currentNoteId = docRef.id;
-        setSelectedNote({ id: docRef.id, ...noteData, createdAt: new Date() } as any);
-      } catch (error) {
-        console.error("Failed to save note before analysis", error);
-        toast.error('Failed to save note before analysis.');
-        return;
-      }
-    }
-
     setIsAnalyzing(true);
     try {
       const analysis = await analyzeNote(content);
-      if (analysis && currentNoteId) {
-        await updateDoc(doc(db, 'notes', currentNoteId), {
-          aiAnalysis: analysis,
-          updatedAt: serverTimestamp()
+      if (analysis) {
+        const updatedNote = await api.put(`/api/notes/${selectedNote.id}`, {
+          aiAnalysis: analysis
         });
+        setNotes(prev => prev.map(n => n.id === selectedNote.id ? updatedNote : n));
         toast.success('Smart Assist analysis complete.');
       }
     } catch (error) {
@@ -214,7 +182,7 @@ export default function Notepad() {
     );
   }
 
-  if (!auth.currentUser) {
+  if (!user) {
     return (
       <div className="max-w-4xl mx-auto px-4 py-20 text-center">
         <PenLine className="w-16 h-16 text-sage/20 mx-auto mb-6" />

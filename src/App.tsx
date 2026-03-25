@@ -1,5 +1,6 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { Toaster } from 'sonner';
+import { AuthProvider } from './contexts/AuthContext';
 import Layout from './components/Layout';
 import Home from './pages/Home';
 import Bible from './pages/Bible';
@@ -25,36 +26,42 @@ import Media from './pages/Media';
 import Dashboard from './pages/Dashboard';
 import Messages from './pages/Messages';
 
+import UserSearch from './components/UserSearch';
+import UserProfile from './components/UserProfile';
+
 export default function App() {
   return (
-    <Router>
-      <Layout>
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/bible" element={<Bible />} />
-          <Route path="/bookmarks" element={<Bookmarks />} />
-          <Route path="/topics" element={<Topics />} />
-          <Route path="/reading-plans" element={<ReadingPlans />} />
-          <Route path="/concordance" element={<Concordance />} />
-          <Route path="/daily" element={<Daily />} />
-          <Route path="/devotional" element={<Devotional />} />
-          <Route path="/chat" element={<Chat />} />
-          <Route path="/forum/*" element={<Forum />} />
-          <Route path="/testimonies" element={<Testimonies />} />
-          <Route path="/groups" element={<Groups />} />
-          <Route path="/friends" element={<Friends />} />
-          <Route path="/profile/:uid" element={<Profile />} />
-          <Route path="/media" element={<Media />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/messages" element={<Messages />} />
-          <Route path="/study-journeys" element={<StudyJourneys />} />
-          <Route path="/prayer-wall" element={<PrayerWall />} />
-          <Route path="/prayer-rooms" element={<PrayerRooms />} />
-          <Route path="/offline" element={<OfflineManager />} />
-          <Route path="/notepad" element={<Notepad />} />
-        </Routes>
-      </Layout>
-      <Toaster position="top-center" richColors />
-    </Router>
+    <AuthProvider>
+      <Router>
+        <Layout>
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/bible" element={<Bible />} />
+            <Route path="/bookmarks" element={<Bookmarks />} />
+            <Route path="/topics" element={<Topics />} />
+            <Route path="/reading-plans" element={<ReadingPlans />} />
+            <Route path="/concordance" element={<Concordance />} />
+            <Route path="/daily" element={<Daily />} />
+            <Route path="/devotional" element={<Devotional />} />
+            <Route path="/chat" element={<Chat />} />
+            <Route path="/forum/*" element={<Forum />} />
+            <Route path="/testimonies" element={<Testimonies />} />
+            <Route path="/groups" element={<Groups />} />
+            <Route path="/friends" element={<Friends />} />
+            <Route path="/profile/:username" element={<UserProfile />} />
+            <Route path="/search" element={<UserSearch />} />
+            <Route path="/media" element={<Media />} />
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/messages" element={<Messages />} />
+            <Route path="/study-journeys" element={<StudyJourneys />} />
+            <Route path="/prayer-wall" element={<PrayerWall />} />
+            <Route path="/prayer-rooms" element={<PrayerRooms />} />
+            <Route path="/offline" element={<OfflineManager />} />
+            <Route path="/notepad" element={<Notepad />} />
+          </Routes>
+        </Layout>
+        <Toaster position="top-center" richColors />
+      </Router>
+    </AuthProvider>
   );
 }

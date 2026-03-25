@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Video, Users, Plus, X, Loader2, MessageSquare } from 'lucide-react';
-import { db, auth } from '../firebase';
-import { collection, query, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc } from 'firebase/firestore';
+import { Video, Users, Plus, X, Loader2 } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 import { toast } from 'sonner';
-
 import { moderateContent } from '../lib/moderation';
 
 interface Room {
@@ -25,23 +24,35 @@ export default function PrayerRooms() {
   const [newRoomDesc, setNewRoomDesc] = useState('');
   const [activeRoom, setActiveRoom] = useState<Room | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [user, setUser] = useState<any>(null);
+
+  const fetchRooms = async () => {
+    try {
+      const data = await api.get('/api/prayer-rooms');
+      setRooms(data);
+    } catch (error) {
+      console.error('Error fetching rooms:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const q = query(collection(db, 'prayer_rooms'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const roomsData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Room[];
-      setRooms(roomsData);
-      setLoading(false);
+    fetchRooms();
+    
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
     });
 
-    return () => unsubscribe();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   const handleCreateRoom = async () => {
-    if (!auth.currentUser || !newRoomName.trim()) return;
+    if (!user || !newRoomName.trim()) return;
     setIsCreating(true);
 
     try {
@@ -60,14 +71,13 @@ export default function PrayerRooms() {
         return;
       }
 
-      await addDoc(collection(db, 'prayer_rooms'), {
+      const newRoom = await api.post('/api/prayer-rooms', {
         name: newRoomName.trim(),
         description: newRoomDesc.trim(),
-        createdBy: auth.currentUser.uid,
-        creatorName: auth.currentUser.displayName || 'Anonymous',
-        createdAt: serverTimestamp(),
-        participantCount: 0
+        creatorName: user.user_metadata?.full_name || user.email?.split('@')[0] || 'Anonymous',
       });
+      
+      setRooms(prev => [newRoom, ...prev]);
       setNewRoomName('');
       setNewRoomDesc('');
       setShowCreateModal(false);

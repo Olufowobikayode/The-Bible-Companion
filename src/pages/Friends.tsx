@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
-import { collection, query, getDocs, doc, getDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
-import { db, auth } from '../firebase';
+import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
 import { Users, UserPlus, UserMinus, Search } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 interface UserProfile {
   uid: string;
+  username: string;
   displayName: string;
   photoURL?: string;
   bio?: string;
@@ -17,46 +19,49 @@ export default function Friends() {
   const [following, setFollowing] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<any>(null);
 
   useEffect(() => {
     const fetchUsers = async () => {
       try {
-        const q = query(collection(db, 'user_profiles'));
-        const snapshot = await getDocs(q);
-        const usersData = snapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() } as UserProfile));
+        const usersData = await api.get('/api/users/search?q=');
         setUsers(usersData);
       } catch (error) {
         console.error("Error fetching users:", error);
       }
     };
 
-    const fetchFollowing = async () => {
-      if (!auth.currentUser) return;
+    const fetchFollowing = async (u: any) => {
+      if (!u) return;
       try {
-        const userDoc = await getDoc(doc(db, 'user_profiles', auth.currentUser.uid));
-        if (userDoc.exists()) {
-          setFollowing(userDoc.data().following || []);
-        }
+        const profile = await api.get(`/api/user-profiles/${u.id}`);
+        setFollowing(profile?.following || []);
       } catch (error) {
         console.error("Error fetching following:", error);
       }
     };
 
-    Promise.all([fetchUsers(), fetchFollowing()]).then(() => setLoading(false));
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      Promise.all([fetchUsers(), fetchFollowing(session?.user)]).then(() => setLoading(false));
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      if (session?.user) fetchFollowing(session.user);
+      else setFollowing([]);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   const handleAddFriend = async (friendUid: string) => {
-    if (!auth.currentUser) {
+    if (!user) {
       toast.error("Please sign in to follow users.");
       return;
     }
     try {
-      await updateDoc(doc(db, 'user_profiles', auth.currentUser.uid), {
-        following: arrayUnion(friendUid)
-      });
-      await updateDoc(doc(db, 'user_profiles', friendUid), {
-        followers: arrayUnion(auth.currentUser.uid)
-      });
+      await api.post(`/api/users/${friendUid}/follow`, {});
       setFollowing(prev => [...prev, friendUid]);
       toast.success("Following user!");
     } catch (error) {
@@ -66,14 +71,9 @@ export default function Friends() {
   };
 
   const handleRemoveFriend = async (friendUid: string) => {
-    if (!auth.currentUser) return;
+    if (!user) return;
     try {
-      await updateDoc(doc(db, 'user_profiles', auth.currentUser.uid), {
-        following: arrayRemove(friendUid)
-      });
-      await updateDoc(doc(db, 'user_profiles', friendUid), {
-        followers: arrayRemove(auth.currentUser.uid)
-      });
+      await api.post(`/api/users/${friendUid}/unfollow`, {});
       setFollowing(prev => prev.filter(id => id !== friendUid));
       toast.success("Unfollowed user");
     } catch (error) {
@@ -82,9 +82,10 @@ export default function Friends() {
     }
   };
 
-  const filteredUsers = users.filter(user => 
-    user.uid !== auth.currentUser?.uid && 
-    (user.displayName?.toLowerCase().includes(searchQuery.toLowerCase()) || '')
+  const filteredUsers = users.filter(u => 
+    u.uid !== user?.id && 
+    (u.displayName?.toLowerCase().includes(searchQuery.toLowerCase()) || 
+     u.username?.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
   return (
@@ -124,16 +125,16 @@ export default function Friends() {
                 animate={{ opacity: 1, y: 0 }}
                 className="bg-white p-6 rounded-3xl border border-sage/10 shadow-sm flex flex-col items-center text-center"
               >
-                <div className="w-20 h-20 rounded-full bg-sage-light flex items-center justify-center text-sage font-bold text-2xl mb-4 cursor-pointer" onClick={() => window.location.href = `/profile/${user.uid}`}>
+                <Link to={`/profile/${user.username}`} className="w-20 h-20 rounded-full bg-sage-light flex items-center justify-center text-sage font-bold text-2xl mb-4 overflow-hidden">
                   {user.photoURL ? (
-                    <img src={user.photoURL} alt={user.displayName} className="w-full h-full rounded-full object-cover" />
+                    <img src={user.photoURL} alt={user.displayName} className="w-full h-full object-cover" />
                   ) : (
                     user.displayName?.[0] || 'U'
                   )}
-                </div>
-                <h3 className="serif text-lg font-semibold text-sage-dark mb-1 cursor-pointer hover:underline" onClick={() => window.location.href = `/profile/${user.uid}`}>
+                </Link>
+                <Link to={`/profile/${user.username}`} className="serif text-lg font-semibold text-sage-dark mb-1 hover:underline">
                   {user.displayName || 'Unknown User'}
-                </h3>
+                </Link>
                 <p className="text-ink/50 text-xs mb-6 line-clamp-2 h-8">{user.bio || 'No bio provided.'}</p>
                 
                 {isFollowing ? (

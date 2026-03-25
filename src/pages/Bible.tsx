@@ -5,8 +5,8 @@ import { askBibleQuestion, performSemanticSearch, getOriginalText, getCrossRefer
 import { TRANSLATIONS, Translation } from '../types';
 import { db_local } from '../lib/db';
 import { ChevronLeft, ChevronRight, Search, Loader2, Bookmark, MessageCircle, Share2, X, Languages, Download, CheckCircle2, BookOpenText, Sparkles } from 'lucide-react';
-import { db, auth } from '../firebase';
-import { collection, addDoc, query, where, onSnapshot, deleteDoc, doc } from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -37,11 +37,45 @@ export default function Bible() {
   const [userBookmarks, setUserBookmarks] = useState<{ [key: string]: string }>({});
   const [hoveredVerse, setHoveredVerse] = useState<string | null>(null);
   const [syncProgress, setSyncProgress] = useState<{ current: number; total: number } | null>(null);
+  const [user, setUser] = useState<any>(null);
   const verseRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
 
   useEffect(() => {
     loadChapter();
   }, [book, chapter, translation]);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (user) {
+      fetchBookmarks();
+    } else {
+      setUserBookmarks({});
+    }
+  }, [user]);
+
+  const fetchBookmarks = async () => {
+    try {
+      const bookmarks = await api.get('/api/bookmarks');
+      const bookmarkMap: { [key: string]: string } = {};
+      bookmarks.forEach((b: any) => {
+        bookmarkMap[`${b.verseRef}_${b.translation}`] = b.id;
+      });
+      setUserBookmarks(bookmarkMap);
+    } catch (error) {
+      console.error('Failed to fetch bookmarks:', error);
+    }
+  };
 
   useEffect(() => {
     if (state?.verse && content && !loading) {
@@ -119,31 +153,8 @@ export default function Bible() {
   const handleNext = () => setChapter(chapter + 1);
   const handlePrev = () => setChapter(Math.max(1, chapter - 1));
 
-  useEffect(() => {
-    if (!auth.currentUser) {
-      setUserBookmarks({});
-      return;
-    }
-
-    const q = query(
-      collection(db, 'bookmarks'),
-      where('uid', '==', auth.currentUser.uid)
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const bookmarks: { [key: string]: string } = {};
-      snapshot.docs.forEach(doc => {
-        const data = doc.data();
-        bookmarks[`${data.verseRef}_${data.translation}`] = doc.id;
-      });
-      setUserBookmarks(bookmarks);
-    });
-
-    return () => unsubscribe();
-  }, []);
-
   const handleBookmark = async (verse: any) => {
-    if (!auth.currentUser) {
+    if (!user) {
       toast.error('Please sign in to bookmark verses.');
       return;
     }
@@ -154,15 +165,20 @@ export default function Bible() {
 
     try {
       if (existingBookmarkId) {
-        await deleteDoc(doc(db, 'bookmarks', existingBookmarkId));
+        await api.delete(`/api/bookmarks/${existingBookmarkId}`);
+        const newBookmarks = { ...userBookmarks };
+        delete newBookmarks[bookmarkKey];
+        setUserBookmarks(newBookmarks);
         toast.success('Bookmark removed');
       } else {
-        await addDoc(collection(db, 'bookmarks'), {
-          uid: auth.currentUser.uid,
+        const newBookmark = await api.post('/api/bookmarks', {
           verseRef,
           text: verse.text,
           translation,
-          createdAt: new Date().toISOString()
+        });
+        setUserBookmarks({
+          ...userBookmarks,
+          [bookmarkKey]: newBookmark.id
         });
         toast.success('Verse bookmarked');
       }

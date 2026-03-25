@@ -3,13 +3,14 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Search, Loader2, Book, Languages, Sparkles, Plus, X, Save, ChevronDown, Download, CheckCircle2 } from 'lucide-react';
 import { askBibleQuestion, getConcordanceEntry } from '../lib/gemini';
 import ReactMarkdown from 'react-markdown';
-import { db, auth } from '../firebase';
-import { collection, addDoc, query, where, onSnapshot, orderBy } from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 import { useNavigate } from 'react-router-dom';
 import { db_local } from '../lib/db';
 import { toast } from 'sonner';
 
 interface ConcordanceResult {
+  id?: string;
   word: string;
   original: string;
   transliteration: string;
@@ -32,6 +33,7 @@ export default function Concordance() {
   const [isAddingCustom, setIsAddingCustom] = useState(false);
   const [showDetailedOriginal, setShowDetailedOriginal] = useState(false);
   const [syncProgress, setSyncProgress] = useState<{ current: number; total: number } | null>(null);
+  const [user, setUser] = useState<any>(null);
   const [newEntry, setNewEntry] = useState<Partial<ConcordanceResult>>({
     language: 'Hebrew',
     usage: []
@@ -39,25 +41,33 @@ export default function Concordance() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!auth.currentUser) return;
-
-    const q = query(
-      collection(db, 'custom_concordance'),
-      where('uid', '==', auth.currentUser.uid),
-      orderBy('createdAt', 'desc')
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const entries = snapshot.docs.map(doc => ({
-        ...doc.data(),
-        id: doc.id,
-        isCustom: true
-      })) as any[];
-      setCustomEntries(entries);
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
     });
 
-    return () => unsubscribe();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (user) {
+      fetchCustomEntries();
+    } else {
+      setCustomEntries([]);
+    }
+  }, [user]);
+
+  const fetchCustomEntries = async () => {
+    try {
+      const entries = await api.get('/api/custom-concordance');
+      setCustomEntries(entries.map((e: any) => ({ ...e, isCustom: true })));
+    } catch (error) {
+      console.error('Failed to fetch custom entries:', error);
+    }
+  };
 
   const handleSearch = async (wordToSearch?: string) => {
     const term = wordToSearch || searchQuery;
@@ -121,7 +131,7 @@ export default function Concordance() {
   };
 
   const handleAddCustom = async () => {
-    if (!auth.currentUser) {
+    if (!user) {
       toast.error('Please sign in to add custom entries.');
       return;
     }
@@ -132,7 +142,7 @@ export default function Concordance() {
     }
 
     try {
-      await addDoc(collection(db, 'custom_concordance'), {
+      const savedEntry = await api.post('/api/custom-concordance', {
         word: newEntry.word,
         original: newEntry.original || '',
         transliteration: newEntry.transliteration || '',
@@ -140,9 +150,9 @@ export default function Concordance() {
         definition: newEntry.definition,
         usage: newEntry.usage || [],
         etymology: newEntry.etymology || '',
-        uid: auth.currentUser.uid,
-        createdAt: new Date().toISOString()
       });
+      
+      setCustomEntries([{ ...savedEntry, isCustom: true }, ...customEntries]);
       setIsAddingCustom(false);
       setNewEntry({ language: 'Hebrew', usage: [] });
       toast.success('Custom entry saved!');

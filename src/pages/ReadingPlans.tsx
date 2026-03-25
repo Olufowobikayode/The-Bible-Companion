@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { db, auth } from '../firebase';
-import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, getDocs } from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 import { BookOpen, CheckCircle2, Circle, Loader2, Sparkles, Plus } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -54,47 +54,53 @@ export default function ReadingPlans() {
   const [userPlans, setUserPlans] = useState<ReadingPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'my-plans' | 'browse'>('browse');
+  const [user, setUser] = useState<any>(null);
 
   useEffect(() => {
-    if (!auth.currentUser) {
-      setLoading(false);
-      return;
-    }
-
-    const q = query(
-      collection(db, 'reading_plans'),
-      where('uid', '==', auth.currentUser.uid)
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const items = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as ReadingPlan[];
-      setUserPlans(items);
-      setLoading(false);
-      if (items.length > 0) setActiveTab('my-plans');
-    }, (error) => {
-      console.error('Error fetching plans:', error);
-      toast.error('Failed to load reading plans.');
-      setLoading(false);
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
     });
 
-    return () => unsubscribe();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
+  useEffect(() => {
+    if (user) {
+      fetchUserPlans();
+    } else {
+      setLoading(false);
+    }
+  }, [user]);
+
+  const fetchUserPlans = async () => {
+    try {
+      const items = await api.get('/api/reading-plans');
+      setUserPlans(items);
+      if (items.length > 0) setActiveTab('my-plans');
+    } catch (error) {
+      console.error('Error fetching plans:', error);
+      toast.error('Failed to load reading plans.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleStartPlan = async (plan: any) => {
-    if (!auth.currentUser) {
+    if (!user) {
       toast.error('Please sign in to start a reading plan.');
       return;
     }
 
     try {
-      await addDoc(collection(db, 'reading_plans'), {
+      const newPlan = await api.post('/api/reading-plans', {
         ...plan,
-        uid: auth.currentUser.uid,
         startedAt: new Date().toISOString()
       });
+      setUserPlans([newPlan, ...userPlans]);
       toast.success(`Started plan: ${plan.title}`);
       setActiveTab('my-plans');
     } catch (error) {
@@ -111,9 +117,10 @@ export default function ReadingPlans() {
     newDays[dayIndex].completed = !newDays[dayIndex].completed;
 
     try {
-      await updateDoc(doc(db, 'reading_plans', plan.id), {
+      await api.put(`/api/reading-plans/${plan.id}`, {
         days: newDays
       });
+      setUserPlans(userPlans.map(p => p.id === planId ? { ...p, days: newDays } : p));
     } catch (error) {
       console.error('Error updating day:', error);
       toast.error('Failed to update progress.');

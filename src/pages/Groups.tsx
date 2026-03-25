@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc, getDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
-import { db, auth } from '../firebase';
+import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
 import { Users, Plus, Trash2, LogIn, LogOut } from 'lucide-react';
 import { moderateContent } from '../lib/moderation';
+import { useAuth } from '../contexts/AuthContext';
 
 interface Group {
   id: string;
@@ -13,42 +14,64 @@ interface Group {
   creatorUid: string;
   creatorName: string;
   members: string[];
-  createdAt: any;
+  createdAt: string;
 }
 
 export default function Groups() {
+  const { user } = useAuth();
   const [groups, setGroups] = useState<Group[]>([]);
   const [newGroupName, setNewGroupName] = useState('');
   const [newGroupDescription, setNewGroupDescription] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [user, setUser] = useState<any>(null);
 
   useEffect(() => {
-    const q = query(collection(db, 'groups'), orderBy('createdAt', 'desc'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      setGroups(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Group)));
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
     });
 
-    const checkAdmin = async () => {
-      if (auth.currentUser) {
-        if (auth.currentUser.email === 'kayodeolufowobi709@gmail.com') {
-          setIsAdmin(true);
-          return;
-        }
-        const userDoc = await getDoc(doc(db, 'user_profiles', auth.currentUser.uid));
-        if (userDoc.exists() && userDoc.data().role === 'admin') {
-          setIsAdmin(true);
-        }
-      }
-    };
-    checkAdmin();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
 
-    return () => unsubscribe();
+    return () => subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    fetchGroups();
+    checkAdmin();
+  }, [user]);
+
+  const fetchGroups = async () => {
+    try {
+      const data = await api.get('/api/groups');
+      setGroups(data);
+    } catch (error) {
+      console.error("Error fetching groups:", error);
+    }
+  };
+
+  const checkAdmin = async () => {
+    if (user) {
+      if (user.email === 'kayodeolufowobi709@gmail.com') {
+        setIsAdmin(true);
+        return;
+      }
+      try {
+        const profile = await api.get(`/api/user-profiles/${user.id}`);
+        if (profile && profile.role === 'admin') {
+          setIsAdmin(true);
+        }
+      } catch (error) {
+        console.error("Error checking admin status:", error);
+      }
+    }
+  };
 
   const handleCreateGroup = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newGroupName.trim() || !newGroupDescription.trim() || !auth.currentUser) return;
+    if (!newGroupName.trim() || !newGroupDescription.trim() || !user) return;
 
     setIsSubmitting(true);
     try {
@@ -66,15 +89,12 @@ export default function Groups() {
         return;
       }
 
-      await addDoc(collection(db, 'groups'), {
+      const newGroup = await api.post('/api/groups', {
         name: newGroupName,
         description: newGroupDescription,
-        creatorUid: auth.currentUser.uid,
-        creatorName: auth.currentUser.displayName || 'Anonymous',
-        members: [auth.currentUser.uid],
-        createdAt: serverTimestamp()
       });
       
+      setGroups([newGroup, ...groups]);
       setNewGroupName('');
       setNewGroupDescription('');
       toast.success("Group created successfully!");
@@ -89,7 +109,8 @@ export default function Groups() {
   const handleDeleteGroup = async (id: string) => {
     if (window.confirm("Are you sure you want to delete this group?")) {
       try {
-        await deleteDoc(doc(db, 'groups', id));
+        await api.delete(`/api/groups/${id}`);
+        setGroups(groups.filter(g => g.id !== id));
         toast.success("Group deleted");
       } catch (error) {
         console.error("Error deleting group:", error);
@@ -99,14 +120,13 @@ export default function Groups() {
   };
 
   const handleJoinGroup = async (groupId: string) => {
-    if (!auth.currentUser) {
+    if (!user) {
       toast.error("Please sign in to join a group.");
       return;
     }
     try {
-      await updateDoc(doc(db, 'groups', groupId), {
-        members: arrayUnion(auth.currentUser.uid)
-      });
+      await api.post(`/api/groups/${groupId}/join`, {});
+      setGroups(groups.map(g => g.id === groupId ? { ...g, members: [...g.members, user.id] } : g));
       toast.success("Joined group!");
     } catch (error) {
       console.error("Error joining group:", error);
@@ -115,11 +135,10 @@ export default function Groups() {
   };
 
   const handleLeaveGroup = async (groupId: string) => {
-    if (!auth.currentUser) return;
+    if (!user) return;
     try {
-      await updateDoc(doc(db, 'groups', groupId), {
-        members: arrayRemove(auth.currentUser.uid)
-      });
+      await api.post(`/api/groups/${groupId}/leave`, {});
+      setGroups(groups.map(g => g.id === groupId ? { ...g, members: g.members.filter(id => id !== user.id) } : g));
       toast.success("Left group");
     } catch (error) {
       console.error("Error leaving group:", error);
@@ -139,7 +158,7 @@ export default function Groups() {
         </p>
       </div>
 
-      {auth.currentUser ? (
+      {user ? (
         <div className="bg-sage-light/20 p-6 sm:p-8 rounded-[2rem] border border-sage/10 mb-12">
           <h2 className="serif text-xl font-semibold text-sage-dark mb-4 flex items-center gap-2">
             <Plus className="w-5 h-5" />
@@ -180,7 +199,7 @@ export default function Groups() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {groups.map((group) => {
-          const isMember = auth.currentUser ? group.members.includes(auth.currentUser.uid) : false;
+          const isMember = user ? group.members.includes(user.id) : false;
           
           return (
             <motion.div
@@ -219,7 +238,7 @@ export default function Groups() {
                   </button>
                 )}
 
-                {(isAdmin || (auth.currentUser && auth.currentUser.uid === group.creatorUid)) && (
+                {(isAdmin || (user && user.id === group.creatorUid)) && (
                   <button 
                     onClick={() => handleDeleteGroup(group.id)}
                     className="p-2 text-ink/20 hover:text-destructive transition-colors"

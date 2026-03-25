@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { generateEmotionResponse, safeParseJSON } from '../lib/gemini';
-import { db, auth } from '../firebase';
-import { collection, addDoc } from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 import { Search, Heart, Loader2, Sparkles } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { toast } from 'sonner';
+import { User as SupabaseUser } from '@supabase/supabase-js';
 
 const SUGGESTED_EMOTIONS = [
   "Peace", "Anxiety", "Stress", "Fear", "Grief", "Anger", "Hope", "Gratitude", "Loneliness"
@@ -15,6 +16,19 @@ export default function Home() {
   const [emotion, setEmotion] = useState('');
   const [loading, setLoading] = useState(false);
   const [response, setResponse] = useState<any>(null);
+  const [user, setUser] = useState<SupabaseUser | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   const handleSubmit = async (e?: React.FormEvent, selectedEmotion?: string) => {
     e?.preventDefault();
@@ -35,13 +49,9 @@ export default function Home() {
       }
       setResponse(parsed);
 
-      if (auth.currentUser) {
-        await addDoc(collection(db, 'history'), {
-          uid: auth.currentUser.uid,
-          emotion: finalEmotion,
-          response: result,
-          createdAt: new Date().toISOString()
-        });
+      if (user) {
+        // Optional: Save to history if endpoint exists
+        // await api.post('/api/history', { emotion: finalEmotion, response: result });
       }
     } catch (error) {
       console.error('Failed to generate response:', error);
@@ -52,18 +62,16 @@ export default function Home() {
   };
 
   const handleBookmark = async (verse: any) => {
-    if (!auth.currentUser) {
+    if (!user) {
       toast.error('Please sign in to bookmark verses.');
       return;
     }
 
     try {
-      await addDoc(collection(db, 'bookmarks'), {
-        uid: auth.currentUser.uid,
+      await api.post('/api/bookmarks', {
         verseRef: verse.reference,
         text: verse.text,
-        translation: 'WEB', // Default for emotion responses
-        createdAt: new Date().toISOString()
+        translation: 'WEB'
       });
       toast.success('Verse bookmarked!');
     } catch (error) {

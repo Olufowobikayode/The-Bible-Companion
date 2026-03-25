@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { db, auth } from '../firebase';
-import { collection, query, where, onSnapshot, deleteDoc, doc } from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 import { Bookmark as BookmarkIcon, Trash2, Loader2, BookOpen } from 'lucide-react';
 import { Bookmark } from '../types';
 import { Link } from 'react-router-dom';
@@ -10,36 +10,42 @@ import { toast } from 'sonner';
 export default function Bookmarks() {
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
   const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<any>(null);
+
+  const fetchBookmarks = async () => {
+    try {
+      const data = await api.get('/api/bookmarks');
+      setBookmarks(data.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+    } catch (error) {
+      console.error('Error fetching bookmarks:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    if (!auth.currentUser) {
-      setLoading(false);
-      return;
-    }
-
-    const q = query(
-      collection(db, 'bookmarks'),
-      where('uid', '==', auth.currentUser.uid)
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const items = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Bookmark[];
-      setBookmarks(items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
-      setLoading(false);
-    }, (error) => {
-      console.error('Error fetching bookmarks:', error);
-      setLoading(false);
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      if (session?.user) fetchBookmarks();
+      else setLoading(false);
     });
 
-    return () => unsubscribe();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      if (session?.user) fetchBookmarks();
+      else {
+        setBookmarks([]);
+        setLoading(false);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   const handleDelete = async (id: string) => {
     try {
-      await deleteDoc(doc(db, 'bookmarks', id));
+      await api.delete(`/api/bookmarks/${id}`);
+      setBookmarks(prev => prev.filter(b => b.id !== id));
       toast.success('Bookmark removed');
     } catch (error) {
       console.error('Delete failed:', error);
@@ -47,7 +53,7 @@ export default function Bookmarks() {
     }
   };
 
-  if (!auth.currentUser) {
+  if (!user) {
     return (
       <div className="max-w-4xl mx-auto px-4 py-20 text-center">
         <div className="w-20 h-20 bg-sage-light rounded-full flex items-center justify-center mx-auto mb-8">

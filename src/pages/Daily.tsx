@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { fetchBibleVerse } from '../lib/bible';
 import { Heart, Share2, Bookmark, Loader2, Sparkles } from 'lucide-react';
-import { db, auth } from '../firebase';
-import { collection, addDoc } from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 import { toast } from 'sonner';
 
 const DAILY_VERSES = [
@@ -13,9 +13,19 @@ const DAILY_VERSES = [
 export default function Daily() {
   const [verse, setVerse] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<any>(null);
 
   useEffect(() => {
     loadDailyVerse();
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   const loadDailyVerse = async () => {
@@ -29,17 +39,15 @@ export default function Daily() {
   };
 
   const handleBookmark = async () => {
-    if (!auth.currentUser) {
+    if (!user) {
       toast.error('Please sign in to bookmark.');
       return;
     }
     try {
-      await addDoc(collection(db, 'bookmarks'), {
-        uid: auth.currentUser.uid,
+      await api.post('/api/bookmarks', {
         verseRef: verse.reference,
         text: verse.text,
         translation: 'KJV',
-        createdAt: new Date().toISOString()
       });
       toast.success('Bookmarked!');
     } catch (error) {

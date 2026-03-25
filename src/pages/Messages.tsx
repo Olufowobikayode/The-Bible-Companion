@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Send, User as UserIcon, MessageCircle } from 'lucide-react';
 import { toast } from 'sonner';
-import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, where } from 'firebase/firestore';
-import { db, auth } from '../firebase';
+import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 import { moderateContent } from '../lib/moderation';
 
 interface Message {
@@ -17,28 +17,36 @@ export default function Messages() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [user, setUser] = useState<any>(null);
+
+  const fetchMessages = async () => {
+    try {
+      const data = await api.get('/api/messages');
+      setMessages(data);
+    } catch (error) {
+      console.error("Error fetching messages:", error);
+    }
+  };
 
   useEffect(() => {
-    if (!auth.currentUser) return;
-
-    // Query for messages sent to the current user OR global messages
-    const q = query(
-      collection(db, 'messages'),
-      where('recipientId', 'in', ['global', auth.currentUser.uid]),
-      orderBy('createdAt', 'desc')
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      setMessages(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Message)));
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      if (session?.user) fetchMessages();
     });
 
-    return () => unsubscribe();
-  }, [auth.currentUser]);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      if (session?.user) fetchMessages();
+      else setMessages([]);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim() || !auth.currentUser) {
-      if (!auth.currentUser) toast.error("Please sign in to send a message.");
+    if (!newMessage.trim() || !user) {
+      if (!user) toast.error("Please sign in to send a message.");
       return;
     }
     
@@ -113,7 +121,7 @@ export default function Messages() {
                         From {msg.from}
                       </span>
                       <span className="text-xs font-bold text-sage bg-sage/5 px-3 py-1 rounded-full uppercase tracking-widest">
-                        {msg.createdAt?.toDate ? msg.createdAt.toDate().toLocaleString() : 'Just now'}
+                        {new Date(msg.createdAt).toLocaleString()}
                       </span>
                     </div>
                     <p className="text-ink/80 leading-relaxed italic">"{msg.text}"</p>

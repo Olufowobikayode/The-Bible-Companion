@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Bell, X, MessageSquare, Heart, Award, Info } from 'lucide-react';
-import { collection, query, where, orderBy, onSnapshot, updateDoc, doc, limit } from 'firebase/firestore';
-import { db, auth } from '../firebase';
+import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 import { motion, AnimatePresence } from 'motion/react';
 import { Link } from 'react-router-dom';
 
@@ -19,29 +19,41 @@ export default function NotificationCenter() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [user, setUser] = useState<any>(null);
+
+  const fetchNotifications = async () => {
+    try {
+      const data = await api.get('/api/notifications');
+      setNotifications(data);
+      setUnreadCount(data.filter((n: any) => !n.read).length);
+    } catch (error) {
+      console.error("Error fetching notifications:", error);
+    }
+  };
 
   useEffect(() => {
-    if (!auth.currentUser) return;
-
-    const q = query(
-      collection(db, 'notifications'),
-      where('userId', '==', auth.currentUser.uid),
-      orderBy('createdAt', 'desc'),
-      limit(20)
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const fetched = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Notification));
-      setNotifications(fetched);
-      setUnreadCount(fetched.filter(n => !n.read).length);
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      if (session?.user) fetchNotifications();
     });
 
-    return () => unsubscribe();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      if (session?.user) fetchNotifications();
+      else {
+        setNotifications([]);
+        setUnreadCount(0);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   const markAsRead = async (id: string) => {
     try {
-      await updateDoc(doc(db, 'notifications', id), { read: true });
+      await api.post(`/api/notifications/${id}/read`, {});
+      setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+      setUnreadCount(prev => Math.max(0, prev - 1));
     } catch (error) {
       console.error("Error marking notification as read:", error);
     }
@@ -105,7 +117,7 @@ export default function NotificationCenter() {
                           <p className="text-xs text-ink/60 mt-1">{n.message}</p>
                           <div className="flex justify-between items-center mt-2">
                             <span className="text-[10px] text-ink/20">
-                              {n.createdAt?.toDate ? n.createdAt.toDate().toLocaleString() : 'Just now'}
+                              {new Date(n.createdAt).toLocaleString()}
                             </span>
                             {n.link && (
                               <Link 

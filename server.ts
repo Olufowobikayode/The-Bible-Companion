@@ -59,6 +59,23 @@ async function startServer() {
     res.json(profile || {});
   });
 
+  app.get("/api/users/search", async (req, res) => {
+    if (!db) return res.status(500).json({ error: "DB not connected" });
+    const { q } = req.query;
+    if (!q) return res.json([]);
+    const users = await db.collection("user_profiles").find({
+      username: { $regex: q, $options: "i" }
+    }).limit(10).toArray();
+    res.json(users);
+  });
+
+  app.get("/api/users/by-username/:username", async (req, res) => {
+    if (!db) return res.status(500).json({ error: "DB not connected" });
+    const profile = await db.collection("user_profiles").findOne({ username: req.params.username });
+    if (!profile) return res.status(404).json({ error: "User not found" });
+    res.json(profile);
+  });
+
   app.post("/api/profile", authenticate, async (req: any, res) => {
     if (!db) return res.status(500).json({ error: "DB not connected" });
     const profile = { ...req.body, uid: req.user.id, updatedAt: new Date() };
@@ -68,6 +85,110 @@ async function startServer() {
       { upsert: true }
     );
     res.json(profile);
+  });
+
+  // Auth Endpoints
+  app.post("/api/auth/register", async (req, res) => {
+    if (!db) return res.status(500).json({ error: "DB not connected" });
+    const { email, username, password } = req.body;
+
+    // Check if username exists
+    const existing = await db.collection("user_profiles").findOne({ username });
+    if (existing) return res.status(400).json({ error: "Username already taken" });
+
+    try {
+      const { data, error } = await supabaseAdmin.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: { username }
+      });
+
+      if (error) throw error;
+
+      const profile = {
+        uid: data.user.id,
+        username,
+        email,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+
+      await db.collection("user_profiles").insertOne(profile);
+
+      // Now sign in to get a session
+      const { data: sessionData, error: sessionError } = await supabaseAdmin.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (sessionError) throw sessionError;
+
+      res.json(sessionData);
+    } catch (error: any) {
+      console.error("Registration error:", error);
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/auth/login", async (req, res) => {
+    if (!db) return res.status(500).json({ error: "DB not connected" });
+    const { username, password } = req.body;
+
+    try {
+      const profile = await db.collection("user_profiles").findOne({ username });
+      if (!profile) return res.status(400).json({ error: "Invalid username or password" });
+
+      const { data, error } = await supabaseAdmin.auth.signInWithPassword({
+        email: profile.email,
+        password
+      });
+
+      if (error) throw error;
+
+      res.json(data);
+    } catch (error: any) {
+      console.error("Login error:", error);
+      res.status(400).json({ error: "Invalid username or password" });
+    }
+  });
+
+  app.post("/api/auth/create-demo", async (req, res) => {
+    if (!db) return res.status(500).json({ error: "DB not connected" });
+    
+    const email = "demo@example.com";
+    const username = "demo_user";
+    const password = "Password123!";
+
+    try {
+      // Check if exists
+      const existing = await db.collection("user_profiles").findOne({ username });
+      if (existing) return res.json({ message: "Demo user already exists", username, password });
+
+      const { data, error } = await supabaseAdmin.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: { username }
+      });
+
+      if (error) throw error;
+
+      const profile = {
+        uid: data.user.id,
+        username,
+        email,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        bio: "I am a demo user for testing purposes.",
+        displayName: "Demo User"
+      };
+
+      await db.collection("user_profiles").insertOne(profile);
+      res.json({ message: "Demo user created", username, password });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
   });
 
   // Prayer Requests
@@ -179,33 +300,78 @@ async function startServer() {
   app.get("/api/forums", async (req, res) => {
     if (!db) return res.status(500).json({ error: "DB not connected" });
     const forums = await db.collection("forums").find().toArray();
-    res.json(forums);
+    res.json(forums.map((f: any) => ({ ...f, id: f._id.toString() })));
+  });
+
+  app.post("/api/forums", authenticate, async (req: any, res) => {
+    if (!db) return res.status(500).json({ error: "DB not connected" });
+    const forum = { ...req.body, createdBy: req.user.id, createdAt: new Date() };
+    const result = await db.collection("forums").insertOne(forum);
+    res.json({ ...forum, id: result.insertedId.toString() });
+  });
+
+  app.delete("/api/forums/:id", authenticate, async (req: any, res) => {
+    if (!db) return res.status(500).json({ error: "DB not connected" });
+    const { ObjectId } = await import("mongodb");
+    await db.collection("forums").deleteOne({ _id: new ObjectId(req.params.id) });
+    res.json({ success: true });
   });
 
   app.get("/api/forums/:forumId/threads", async (req, res) => {
     if (!db) return res.status(500).json({ error: "DB not connected" });
     const threads = await db.collection("threads").find({ forumId: req.params.forumId }).sort({ createdAt: -1 }).toArray();
-    res.json(threads);
+    res.json(threads.map((t: any) => ({ ...t, id: t._id.toString() })));
   });
 
   app.post("/api/forums/:forumId/threads", authenticate, async (req: any, res) => {
     if (!db) return res.status(500).json({ error: "DB not connected" });
     const thread = { ...req.body, forumId: req.params.forumId, authorUid: req.user.id, createdAt: new Date() };
     const result = await db.collection("threads").insertOne(thread);
-    res.json({ ...thread, id: result.insertedId });
+    res.json({ ...thread, id: result.insertedId.toString() });
   });
 
-  app.get("/api/threads/:threadId/posts", async (req, res) => {
+  app.delete("/api/forums/:forumId/threads/:id", authenticate, async (req: any, res) => {
+    if (!db) return res.status(500).json({ error: "DB not connected" });
+    const { ObjectId } = await import("mongodb");
+    await db.collection("threads").deleteOne({ _id: new ObjectId(req.params.id) });
+    res.json({ success: true });
+  });
+
+  app.get(["/api/threads/:threadId/posts", "/api/forums/:forumId/threads/:threadId/posts"], async (req, res) => {
     if (!db) return res.status(500).json({ error: "DB not connected" });
     const posts = await db.collection("forum_posts").find({ threadId: req.params.threadId }).sort({ createdAt: 1 }).toArray();
-    res.json(posts);
+    res.json(posts.map((p: any) => ({ ...p, id: p._id.toString() })));
   });
 
-  app.post("/api/threads/:threadId/posts", authenticate, async (req: any, res) => {
+  app.post(["/api/threads/:threadId/posts", "/api/forums/:forumId/threads/:threadId/posts"], authenticate, async (req: any, res) => {
     if (!db) return res.status(500).json({ error: "DB not connected" });
     const post = { ...req.body, threadId: req.params.threadId, authorUid: req.user.id, createdAt: new Date(), likes: 0 };
     const result = await db.collection("forum_posts").insertOne(post);
-    res.json({ ...post, id: result.insertedId });
+    res.json({ ...post, id: result.insertedId.toString() });
+  });
+
+  app.delete(["/api/threads/:threadId/posts/:id", "/api/forums/:forumId/threads/:threadId/posts/:id"], authenticate, async (req: any, res) => {
+    if (!db) return res.status(500).json({ error: "DB not connected" });
+    const { ObjectId } = await import("mongodb");
+    await db.collection("forum_posts").deleteOne({ _id: new ObjectId(req.params.id) });
+    res.json({ success: true });
+  });
+
+  app.post("/api/forums/:forumId/threads/:threadId/posts/:postId/like", authenticate, async (req: any, res) => {
+    if (!db) return res.status(500).json({ error: "DB not connected" });
+    const { ObjectId } = await import("mongodb");
+    await db.collection("forum_posts").updateOne(
+      { _id: new ObjectId(req.params.postId) },
+      { $inc: { likes: 1 } }
+    );
+    res.json({ success: true });
+  });
+
+  // User Profiles Alias
+  app.get("/api/user-profiles/:uid", async (req, res) => {
+    if (!db) return res.status(500).json({ error: "DB not connected" });
+    const profile = await db.collection("user_profiles").findOne({ uid: req.params.uid });
+    res.json(profile || {});
   });
 
   // Notes

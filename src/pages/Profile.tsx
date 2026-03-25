@@ -1,25 +1,27 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { doc, getDoc, updateDoc, arrayUnion, arrayRemove, collection, query, where, getDocs } from 'firebase/firestore';
-import { db, auth } from '../firebase';
+import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
 import { UserPlus, UserMinus, Grid, Heart, MessageCircle, MapPin, Link as LinkIcon, Calendar } from 'lucide-react';
 
 interface UserProfile {
+  id: string;
   uid: string;
+  username: string;
   displayName: string;
   photoURL?: string;
   bio?: string;
   location?: string;
   website?: string;
-  joinedAt?: any;
+  joinedAt?: string;
   followers?: string[];
   following?: string[];
 }
 
 export default function Profile() {
-  const { uid } = useParams<{ uid: string }>();
+  const { username } = useParams<{ username: string }>();
   const navigate = useNavigate();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -28,37 +30,43 @@ export default function Profile() {
   const [isMessageModalOpen, setIsMessageModalOpen] = useState(false);
   const [messageText, setMessageText] = useState('');
   const [isSendingMessage, setIsSendingMessage] = useState(false);
+  const [user, setUser] = useState<any>(null);
 
-  const currentUid = auth.currentUser?.uid;
-  const isOwnProfile = currentUid === uid;
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const currentUid = user?.id;
+  const isOwnProfile = profile && currentUid === profile.uid;
 
   useEffect(() => {
     const fetchProfile = async () => {
-      if (!uid) return;
+      if (!username) return;
       try {
-        const docRef = doc(db, 'user_profiles', uid);
-        const docSnap = await getDoc(docRef);
-        
-        if (docSnap.exists()) {
-          const data = docSnap.data() as UserProfile;
-          setProfile({ uid, ...data });
-          if (currentUid && data.followers?.includes(currentUid)) {
-            setIsFollowing(true);
-          }
-        } else {
-          toast.error("User not found");
-          navigate('/');
+        const data = await api.get(`/api/users/by-username/${username}`);
+        setProfile(data);
+        if (currentUid && data.followers?.includes(currentUid)) {
+          setIsFollowing(true);
         }
       } catch (error) {
         console.error("Error fetching profile:", error);
-        toast.error("Failed to load profile");
+        toast.error("User not found");
+        navigate('/');
       } finally {
         setLoading(false);
       }
     };
 
     fetchProfile();
-  }, [uid, currentUid, navigate]);
+  }, [username, currentUid, navigate]);
 
   const handleFollow = async () => {
     if (!currentUid || !profile) {
@@ -67,20 +75,13 @@ export default function Profile() {
     }
 
     try {
-      const currentUserRef = doc(db, 'user_profiles', currentUid);
-      const targetUserRef = doc(db, 'user_profiles', profile.uid);
-
       if (isFollowing) {
-        // Unfollow
-        await updateDoc(currentUserRef, { following: arrayRemove(profile.uid) });
-        await updateDoc(targetUserRef, { followers: arrayRemove(currentUid) });
+        await api.post(`/api/users/${profile.uid}/unfollow`, {});
         setIsFollowing(false);
         setProfile(prev => prev ? { ...prev, followers: prev.followers?.filter(id => id !== currentUid) } : null);
         toast.success(`Unfollowed ${profile.displayName}`);
       } else {
-        // Follow
-        await updateDoc(currentUserRef, { following: arrayUnion(profile.uid) });
-        await updateDoc(targetUserRef, { followers: arrayUnion(currentUid) });
+        await api.post(`/api/users/${profile.uid}/follow`, {});
         setIsFollowing(true);
         setProfile(prev => prev ? { ...prev, followers: [...(prev.followers || []), currentUid] } : null);
         toast.success(`Following ${profile.displayName}`);
@@ -105,13 +106,9 @@ export default function Profile() {
         return;
       }
 
-      const { addDoc, collection, serverTimestamp } = await import('firebase/firestore');
-      await addDoc(collection(db, 'messages'), {
+      await api.post('/api/messages', {
         text: messageText,
-        from: auth.currentUser?.displayName || 'Anonymous',
-        senderId: currentUid,
         recipientId: profile.uid,
-        createdAt: serverTimestamp()
       });
 
       toast.success(`Encouragement sent to ${profile.displayName}!`);
@@ -212,7 +209,7 @@ export default function Profile() {
                 </a>
               )}
               {profile.joinedAt && (
-                <div className="flex items-center gap-1"><Calendar size={16} /> Joined {new Date(profile.joinedAt?.toDate()).toLocaleDateString()}</div>
+                <div className="flex items-center gap-1"><Calendar size={16} /> Joined {new Date(profile.joinedAt).toLocaleDateString()}</div>
               )}
             </div>
           </div>

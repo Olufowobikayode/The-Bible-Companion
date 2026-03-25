@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Book, ChevronRight, ChevronLeft, Sparkles, Heart, ShieldCheck, Loader2 } from 'lucide-react';
-import { db, auth } from '../firebase';
-import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 import { toast } from 'sonner';
 
 const DEVOTIONAL_DAYS = Array.from({ length: 30 }, (_, i) => ({
@@ -23,35 +23,49 @@ const DEVOTIONAL_DAYS = Array.from({ length: 30 }, (_, i) => ({
 export default function Devotional() {
   const [currentDay, setCurrentDay] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<any>(null);
   const dayData = DEVOTIONAL_DAYS[currentDay - 1];
 
   useEffect(() => {
-    if (!auth.currentUser) {
-      setLoading(false);
-      return;
-    }
-
-    const userDocRef = doc(db, 'user_profiles', auth.currentUser.uid);
-    const unsubscribe = onSnapshot(userDocRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        if (data.devotionalDay) {
-          setCurrentDay(data.devotionalDay);
-        }
-      }
-      setLoading(false);
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
     });
 
-    return () => unsubscribe();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (user) {
+      fetchProgress();
+    } else {
+      setLoading(false);
+    }
+  }, [user]);
+
+  const fetchProgress = async () => {
+    try {
+      const profile = await api.get(`/api/user-profiles/${user.id}`);
+      if (profile.devotionalDay) {
+        setCurrentDay(profile.devotionalDay);
+      }
+    } catch (error) {
+      console.error('Error fetching progress:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleDayChange = async (day: number) => {
     setCurrentDay(day);
-    if (auth.currentUser) {
+    if (user) {
       try {
-        await setDoc(doc(db, 'user_profiles', auth.currentUser.uid), {
+        await api.put(`/api/user-profiles/${user.id}`, {
           devotionalDay: day
-        }, { merge: true });
+        });
         toast.success(`Progress saved for Day ${day}.`);
       } catch (error) {
         console.error('Error saving progress:', error);

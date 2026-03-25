@@ -13,13 +13,15 @@ async function getHeaders() {
 export const api = {
   async get(path: string) {
     const headers = await getHeaders();
-    const res = await fetch(`${API_BASE}${path}`, { headers });
+    const fullPath = path.startsWith('/api') ? path : `${API_BASE}${path}`;
+    const res = await fetch(fullPath, { headers });
     if (!res.ok) throw new Error(`API Error: ${res.statusText}`);
     return res.json();
   },
   async post(path: string, body: any) {
     const headers = await getHeaders();
-    const res = await fetch(`${API_BASE}${path}`, {
+    const fullPath = path.startsWith('/api') ? path : `${API_BASE}${path}`;
+    const res = await fetch(fullPath, {
       method: 'POST',
       headers,
       body: JSON.stringify(body)
@@ -29,7 +31,8 @@ export const api = {
   },
   async put(path: string, body: any) {
     const headers = await getHeaders();
-    const res = await fetch(`${API_BASE}${path}`, {
+    const fullPath = path.startsWith('/api') ? path : `${API_BASE}${path}`;
+    const res = await fetch(fullPath, {
       method: 'PUT',
       headers,
       body: JSON.stringify(body)
@@ -39,7 +42,8 @@ export const api = {
   },
   async delete(path: string) {
     const headers = await getHeaders();
-    const res = await fetch(`${API_BASE}${path}`, {
+    const fullPath = path.startsWith('/api') ? path : `${API_BASE}${path}`;
+    const res = await fetch(fullPath, {
       method: 'DELETE',
       headers
     });

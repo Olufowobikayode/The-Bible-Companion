@@ -1,11 +1,9 @@
 import { ReactNode, useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { auth, signOut } from '../firebase';
-import { onAuthStateChanged, User } from 'firebase/auth';
 import { supabase } from '../lib/supabase';
-import { User as SupabaseUser } from '@supabase/supabase-js';
+import { useAuth } from '../contexts/AuthContext';
 import DailyScripture from './DailyScripture';
-import { Book, Heart, Home, MessageCircle, LogOut, Search, Menu, X, User as UserIcon, BookOpen, Languages, MessageSquare, Database, PenLine, Play, Activity, Send, Video, Music, LayoutDashboard, Sparkles, Compass, Calendar, Bookmark, Quote, Users, UserPlus, Hash, Sun } from 'lucide-react';
+import { Book, Heart, Home, MessageCircle, LogOut, Search, Menu, X, User as UserIcon, BookOpen, Languages, MessageSquare, Database, PenLine, Play, Activity, Send, Video, Music, LayoutDashboard, Sparkles, Compass, Calendar, Bookmark, Quote, Users, UserPlus, Hash, Sun, UserSearch } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -21,8 +19,7 @@ interface LayoutProps {
 }
 
 export default function Layout({ children }: LayoutProps) {
-  const [user, setUser] = useState<SupabaseUser | null>(null);
-  const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const { user, loading: isAuthLoading } = useAuth();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const location = useLocation();
@@ -31,18 +28,6 @@ export default function Layout({ children }: LayoutProps) {
   const [isGeminiMissing, setIsGeminiMissing] = useState(false);
 
   useEffect(() => {
-    // Initial session check
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      setIsAuthLoading(false);
-    });
-
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      setIsAuthLoading(false);
-    });
-
     // Dynamic offline detection
     const handleOnlineStatus = () => {
       setIsFirebaseOffline(!navigator.onLine);
@@ -60,7 +45,6 @@ export default function Layout({ children }: LayoutProps) {
     }
 
     return () => {
-      subscription.unsubscribe();
       window.removeEventListener('online', handleOnlineStatus);
       window.removeEventListener('offline', handleOnlineStatus);
     };
@@ -100,6 +84,7 @@ export default function Layout({ children }: LayoutProps) {
       items: [
         { name: 'Community Tabernacle', path: '/forum', icon: MessageSquare },
         { name: 'Cloud of Witnesses', path: '/testimonies', icon: Heart },
+        { name: 'Search Brethren', path: '/search', icon: Search },
         { name: 'Prayer Groups', path: '/groups', icon: UserIcon },
         { name: 'Brethren', path: '/friends', icon: UserIcon },
         { name: 'Word for Someone', path: '/messages', icon: Send },
@@ -177,7 +162,7 @@ export default function Layout({ children }: LayoutProps) {
                     <span className="text-xs font-bold text-ink/80 leading-none">{user.user_metadata?.full_name || user.email}</span>
                     <span className="text-[10px] text-sage font-bold uppercase tracking-widest mt-1">Member</span>
                   </div>
-                  <img src={user.user_metadata?.avatar_url || ''} alt="" className="w-10 h-10 rounded-xl border-2 border-white shadow-md" />
+                  <img src={user.user_metadata?.avatar_url || null} alt="" className="w-10 h-10 rounded-xl border-2 border-white shadow-md" />
                   <button 
                     onClick={handleLogout} 
                     className="p-2 text-ink/30 hover:text-red-500 transition-colors hover:bg-red-50 rounded-lg"
@@ -206,7 +191,7 @@ export default function Layout({ children }: LayoutProps) {
                   onClick={() => setIsMenuOpen(true)}
                   className="flex items-center space-x-2 p-1 pr-3 bg-white rounded-xl border border-sage/10 shadow-sm active:scale-95 transition-transform"
                 >
-                  <img src={user.user_metadata?.avatar_url || ''} alt="" className="w-8 h-8 rounded-lg border border-sage-light shadow-sm" />
+                  <img src={user.user_metadata?.avatar_url || null} alt="" className="w-8 h-8 rounded-lg border border-sage-light shadow-sm" />
                   <Menu size={18} className="text-sage-dark" />
                 </button>
               ) : (
@@ -265,7 +250,7 @@ export default function Layout({ children }: LayoutProps) {
                 <div className="flex-grow overflow-y-auto p-6 space-y-8">
                   {user && (
                     <div className="flex items-center space-x-4 p-4 bg-sage-light/10 rounded-3xl mb-6 border border-sage/5">
-                      <img src={user.user_metadata?.avatar_url || ''} alt="" className="w-14 h-14 rounded-full border-2 border-white shadow-md" />
+                      <img src={user.user_metadata?.avatar_url || null} alt="" className="w-14 h-14 rounded-full border-2 border-white shadow-md" />
                       <div className="overflow-hidden">
                         <p className="font-bold text-ink/80 truncate">{user.user_metadata?.full_name || user.email}</p>
                         <p className="text-xs text-ink/40 truncate">{user.email}</p>
