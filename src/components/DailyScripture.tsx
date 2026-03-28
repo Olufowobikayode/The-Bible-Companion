@@ -2,20 +2,56 @@ import { useState, useEffect } from 'react';
 import { DAILY_SCRIPTURES } from '../lib/scriptures';
 import { motion, AnimatePresence } from 'motion/react';
 import { Sparkles } from 'lucide-react';
+import { callGemini, safeParseJSON } from '../lib/gemini';
+import { Type } from '@google/genai';
 
 export default function DailyScripture() {
-  const [scripture, setScripture] = useState(DAILY_SCRIPTURES[0]);
+  const [scripture, setScripture] = useState(DAILY_SCRIPTURES[Math.floor(Math.random() * DAILY_SCRIPTURES.length)]);
 
   useEffect(() => {
-    // Get a deterministic scripture based on the current date
-    const now = new Date();
-    const startOfYear = new Date(now.getFullYear(), 0, 0);
-    const diff = now.getTime() - startOfYear.getTime();
-    const oneDay = 1000 * 60 * 60 * 24;
-    const dayOfYear = Math.floor(diff / oneDay);
-    
-    const index = dayOfYear % DAILY_SCRIPTURES.length;
-    setScripture(DAILY_SCRIPTURES[index]);
+    const fetchDaily = async () => {
+      try {
+        const res = await fetch('/api/scripture/daily');
+        if (res.ok) {
+          const data = await res.json();
+          if (data) {
+            setScripture(data);
+          } else {
+            // Generate new one using Gemini if backend has no cached version
+            console.log("[DailyScripture] No cached scripture, generating new one...");
+            const response = await callGemini({
+              model: "gemini-3-flash-preview",
+              contents: "Provide a beautiful, encouraging Bible verse for today. Return ONLY a JSON object: { \"reference\": \"string\", \"text\": \"string\" }",
+              config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                  type: Type.OBJECT,
+                  properties: {
+                    reference: { type: Type.STRING },
+                    text: { type: Type.STRING }
+                  },
+                  required: ["reference", "text"]
+                }
+              }
+            });
+            
+            const newScripture = safeParseJSON(response);
+            if (newScripture && newScripture.reference) {
+              setScripture(newScripture);
+              // Save to backend for other users
+              await fetch('/api/scripture/daily', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ scripture: newScripture })
+              });
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching daily scripture:", error);
+      }
+    };
+    fetchDaily();
   }, []);
 
   return (

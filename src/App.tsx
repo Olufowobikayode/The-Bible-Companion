@@ -18,8 +18,6 @@ import PrayerWall from './components/prayer/PrayerWall';
 import OfflineManager from './pages/OfflineManager';
 import Notepad from './pages/Notepad';
 import Testimonies from './pages/Testimonies';
-import Community from './pages/Community';
-import GroupDetail from './pages/GroupDetail';
 import Friends from './pages/Friends';
 import Profile from './pages/Profile';
 import PrayerRooms from './pages/PrayerRooms';
@@ -47,13 +45,11 @@ export default function App() {
             <Route path="/chat" element={<Chat />} />
             <Route path="/forum/*" element={<Forum />} />
             <Route path="/testimonies" element={<Testimonies />} />
-            <Route path="/community" element={<Community />} />
-            <Route path="/community/:groupId" element={<GroupDetail />} />
             <Route path="/friends" element={<Friends />} />
-            <Route path="/profile/:username" element={<UserProfile />} />
+            <Route path="/profile" element={<Profile />} />
+            <Route path="/profile/:username" element={<Profile />} />
             <Route path="/search" element={<UserSearch />} />
             <Route path="/media" element={<Media />} />
-            <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/messages" element={<Messages />} />
             <Route path="/study-journeys" element={<StudyJourneys />} />
             <Route path="/prayer-wall" element={<PrayerWall />} />

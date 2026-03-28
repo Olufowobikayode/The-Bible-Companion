@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, Loader2, Book, Languages, Sparkles, Plus, X, Save, ChevronDown, Download, CheckCircle2 } from 'lucide-react';
-import { askBibleQuestion, getConcordanceEntry } from '../lib/gemini';
+import { Search, Loader2, Book, Languages, Sparkles, Plus, X, Save, ChevronDown, Download, CheckCircle2, Heart } from 'lucide-react';
+import { askBibleQuestion, getConcordanceEntry, getDetailedOriginalScript } from '../lib/gemini';
 import ReactMarkdown from 'react-markdown';
 import { supabase } from '../lib/supabase';
 import { api } from '../lib/api';
@@ -32,6 +32,8 @@ export default function Concordance() {
   const [customEntries, setCustomEntries] = useState<ConcordanceResult[]>([]);
   const [isAddingCustom, setIsAddingCustom] = useState(false);
   const [showDetailedOriginal, setShowDetailedOriginal] = useState(false);
+  const [detailedScriptData, setDetailedScriptData] = useState<any>(null);
+  const [loadingDetailedScript, setLoadingDetailedScript] = useState(false);
   const [syncProgress, setSyncProgress] = useState<{ current: number; total: number } | null>(null);
   const [user, setUser] = useState<any>(null);
   const [newEntry, setNewEntry] = useState<Partial<ConcordanceResult>>({
@@ -113,6 +115,23 @@ export default function Concordance() {
       toast.error('Failed to search concordance.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleShowDetailedOriginal = async () => {
+    if (!result) return;
+    setShowDetailedOriginal(true);
+    if (!detailedScriptData) {
+      setLoadingDetailedScript(true);
+      try {
+        const data = await getDetailedOriginalScript(result.word, result.original, result.language);
+        setDetailedScriptData(data);
+      } catch (error) {
+        console.error('Failed to fetch detailed script:', error);
+        toast.error('Failed to load detailed script analysis.');
+      } finally {
+        setLoadingDetailedScript(false);
+      }
     }
   };
 
@@ -422,7 +441,7 @@ export default function Concordance() {
                 </div>
                 <div className="text-right">
                   <button 
-                    onClick={() => setShowDetailedOriginal(true)}
+                    onClick={handleShowDetailedOriginal}
                     className="text-6xl font-serif text-sage mb-2 hover:scale-105 transition-transform cursor-pointer"
                     title="Click for details"
                   >
@@ -500,25 +519,56 @@ export default function Concordance() {
               >
                 <X size={24} />
               </button>
-              <div className="space-y-6 text-center">
+              <div className="space-y-6 text-center max-h-[70vh] overflow-y-auto pr-2 custom-scrollbar">
                 <div className="text-7xl font-serif text-sage mb-4">{result.original}</div>
                 <div className="text-xl font-mono text-ink/40 italic mb-6">{result.transliteration}</div>
-                <div className="space-y-4 text-left">
-                  <div>
-                    <h4 className="text-xs font-bold text-sage-dark uppercase tracking-widest mb-1">Meaning</h4>
-                    <p className="text-ink/70 leading-relaxed">{result.definition}</p>
+                
+                {loadingDetailedScript ? (
+                  <div className="flex flex-col items-center justify-center py-12 space-y-4">
+                    <Loader2 className="w-8 h-8 text-sage animate-spin" />
+                    <p className="text-ink/40 text-sm uppercase tracking-widest">Analyzing original script...</p>
                   </div>
-                  <div>
-                    <h4 className="text-xs font-bold text-sage-dark uppercase tracking-widest mb-1">Etymology</h4>
-                    <p className="text-ink/60 italic">{result.etymology}</p>
+                ) : detailedScriptData ? (
+                  <div className="space-y-6 text-left">
+                    <div>
+                      <h4 className="text-xs font-bold text-sage-dark uppercase tracking-widest mb-2 flex items-center gap-2">
+                        <Languages size={14} /> Morphology & Grammar
+                      </h4>
+                      <div className="text-ink/70 leading-relaxed text-sm bg-white/50 p-4 rounded-xl border border-sage/10">
+                        <ReactMarkdown>{detailedScriptData.morphology}</ReactMarkdown>
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <h4 className="text-xs font-bold text-sage-dark uppercase tracking-widest mb-2 flex items-center gap-2">
+                        <Book size={14} /> Root Analysis
+                      </h4>
+                      <div className="text-ink/70 leading-relaxed text-sm bg-white/50 p-4 rounded-xl border border-sage/10">
+                        <ReactMarkdown>{detailedScriptData.rootAnalysis}</ReactMarkdown>
+                      </div>
+                    </div>
+
+                    <div>
+                      <h4 className="text-xs font-bold text-sage-dark uppercase tracking-widest mb-2 flex items-center gap-2">
+                        <Sparkles size={14} /> Historical Context
+                      </h4>
+                      <div className="text-ink/70 leading-relaxed text-sm bg-white/50 p-4 rounded-xl border border-sage/10">
+                        <ReactMarkdown>{detailedScriptData.historicalContext}</ReactMarkdown>
+                      </div>
+                    </div>
+
+                    <div>
+                      <h4 className="text-xs font-bold text-sage-dark uppercase tracking-widest mb-2 flex items-center gap-2">
+                        <Heart size={14} /> Theological Nuance
+                      </h4>
+                      <div className="text-ink/70 leading-relaxed text-sm bg-white/50 p-4 rounded-xl border border-sage/10">
+                        <ReactMarkdown>{detailedScriptData.theologicalNuance}</ReactMarkdown>
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <h4 className="text-xs font-bold text-sage-dark uppercase tracking-widest mb-1">Usage Examples</h4>
-                    <ul className="list-disc list-inside text-ink/70 leading-relaxed text-sm">
-                      {result.usage.map((u, i) => <li key={i}>{u}</li>)}
-                    </ul>
-                  </div>
-                </div>
+                ) : (
+                  <div className="text-ink/40 text-sm py-8">Failed to load detailed analysis.</div>
+                )}
               </div>
             </motion.div>
           </div>

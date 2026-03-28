@@ -11,6 +11,7 @@ export default function Bookmarks() {
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<any>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const fetchBookmarks = async () => {
     try {
@@ -43,6 +44,13 @@ export default function Bookmarks() {
   }, []);
 
   const handleDelete = async (id: string) => {
+    setConfirmDeleteId(id);
+  };
+
+  const executeDelete = async () => {
+    if (!confirmDeleteId) return;
+    const id = confirmDeleteId;
+    setConfirmDeleteId(null);
     try {
       await api.delete(`/api/bookmarks/${id}`);
       setBookmarks(prev => prev.filter(b => b.id !== id));
@@ -121,6 +129,33 @@ export default function Bookmarks() {
           <Link to="/bible" className="text-sage font-medium hover:underline mt-4 inline-block">
             Explore the Bible
           </Link>
+        </div>
+      )}
+
+      {confirmDeleteId && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white p-8 rounded-[2.5rem] max-w-sm w-full shadow-2xl"
+          >
+            <h3 className="serif text-2xl font-semibold text-sage-dark mb-4">Confirm Deletion</h3>
+            <p className="text-ink/70 mb-8 leading-relaxed">Are you sure you want to delete this bookmark? This action cannot be undone.</p>
+            <div className="flex gap-3">
+              <button 
+                onClick={() => setConfirmDeleteId(null)}
+                className="flex-1 px-6 py-3 rounded-xl border border-sage/20 font-medium hover:bg-sage-light transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={executeDelete}
+                className="flex-1 px-6 py-3 bg-destructive text-white rounded-xl font-medium hover:bg-destructive/90 transition-colors"
+              >
+                Delete
+              </button>
+            </div>
+          </motion.div>
         </div>
       )}
     </div>

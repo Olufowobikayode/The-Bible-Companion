@@ -17,9 +17,13 @@ export default function UserProfile() {
       try {
         const data = await api.get(`/api/users/by-username/${username}`);
         setProfile(data);
-      } catch (error) {
-        console.error('Failed to fetch profile:', error);
-        toast.error('User not found');
+      } catch (error: any) {
+        if (error.message && error.message.includes('404')) {
+          console.log('Profile not found');
+        } else {
+          console.error('Failed to fetch profile:', error);
+          toast.error('Failed to fetch profile');
+        }
       } finally {
         setIsLoading(false);
       }
@@ -118,7 +122,7 @@ export default function UserProfile() {
                 </div>
                 <div className="p-4 bg-white rounded-2xl border border-sage/10 text-center space-y-1">
                   <User className="w-5 h-5 text-sage/40 mx-auto" />
-                  <p className="text-2xl font-bold text-sage-dark">0</p>
+                  <p className="text-2xl font-bold text-sage-dark">{profile.followersCount || 0}</p>
                   <p className="text-[10px] text-ink/30 uppercase tracking-widest font-bold">Followers</p>
                 </div>
               </div>

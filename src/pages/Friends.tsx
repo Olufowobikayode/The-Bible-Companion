@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
+import { useLocation, Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { api } from '../lib/api';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
-import { Users, UserPlus, UserMinus, Search } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Users, UserPlus, UserMinus, Search, Loader2 } from 'lucide-react';
 
 interface UserProfile {
   uid: string;
@@ -15,45 +15,50 @@ interface UserProfile {
 }
 
 export default function Friends() {
+  const location = useLocation();
+  const queryParams = new URLSearchParams(location.search);
+  const initialTab = (queryParams.get('tab') as 'brethren' | 'followers' | 'following') || 'brethren';
+  const targetUid = queryParams.get('uid');
+
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [following, setFollowing] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'brethren' | 'followers' | 'following'>(initialTab);
   const [user, setUser] = useState<any>(null);
 
   useEffect(() => {
-    const fetchUsers = async () => {
+    const fetchData = async () => {
+      setLoading(true);
       try {
-        const usersData = await api.get('/api/users/search?q=');
+        const { data: { session } } = await supabase.auth.getSession();
+        setUser(session?.user ?? null);
+
+        let usersData: UserProfile[] = [];
+        if (activeTab === 'brethren') {
+          usersData = await api.get('/api/users/brethren');
+        } else if (activeTab === 'followers') {
+          usersData = await api.get(`/api/users/${session?.user?.id}/followers`);
+        } else if (activeTab === 'following') {
+          usersData = await api.get(`/api/users/${session?.user?.id}/following`);
+        } else {
+          usersData = await api.get('/api/users/search?q=');
+        }
         setUsers(usersData);
+
+        if (session?.user) {
+          const profile = await api.get(`/api/users/me`);
+          setFollowing(profile?.following || []);
+        }
       } catch (error) {
-        console.error("Error fetching users:", error);
+        console.error("Error fetching data:", error);
+      } finally {
+        setLoading(false);
       }
     };
 
-    const fetchFollowing = async (u: any) => {
-      if (!u) return;
-      try {
-        const profile = await api.get(`/api/user-profiles/${u.id}`);
-        setFollowing(profile?.following || []);
-      } catch (error) {
-        console.error("Error fetching following:", error);
-      }
-    };
-
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      Promise.all([fetchUsers(), fetchFollowing(session?.user)]).then(() => setLoading(false));
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      if (session?.user) fetchFollowing(session.user);
-      else setFollowing([]);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
+    fetchData();
+  }, [activeTab]);
 
   const handleAddFriend = async (friendUid: string) => {
     if (!user) {
@@ -61,7 +66,7 @@ export default function Friends() {
       return;
     }
     try {
-      await api.post(`/api/users/${friendUid}/follow`, {});
+      await api.post(`/api/follow`, { targetId: friendUid });
       setFollowing(prev => [...prev, friendUid]);
       toast.success("Following user!");
     } catch (error) {
@@ -73,7 +78,7 @@ export default function Friends() {
   const handleRemoveFriend = async (friendUid: string) => {
     if (!user) return;
     try {
-      await api.post(`/api/users/${friendUid}/unfollow`, {});
+      await api.post(`/api/unfollow`, { targetId: friendUid });
       setFollowing(prev => prev.filter(id => id !== friendUid));
       toast.success("Unfollowed user");
     } catch (error) {
@@ -111,8 +116,30 @@ export default function Friends() {
         <Search className="absolute left-3 top-3.5 w-4 h-4 text-ink/40" />
       </div>
 
+      <div className="flex justify-center gap-4 mb-12">
+        {[
+          { id: 'brethren', label: 'All Brethren' },
+          { id: 'followers', label: 'Followers' },
+          { id: 'following', label: 'Following' }
+        ].map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id as any)}
+            className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${
+              activeTab === tab.id 
+                ? 'bg-sage text-white shadow-lg shadow-sage/20' 
+                : 'bg-white text-ink/40 hover:text-sage border border-sage/10'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
       {loading ? (
-        <div className="text-center py-12 text-ink/40">Loading users...</div>
+        <div className="flex justify-center py-20">
+          <Loader2 className="w-8 h-8 text-sage animate-spin" />
+        </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredUsers.map((user) => {

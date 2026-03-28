@@ -14,6 +14,7 @@ export const api = {
   async request(path: string, options: RequestInit = {}, retries = 3): Promise<any> {
     const headers = await getHeaders();
     const fullPath = path.startsWith('/api') ? path : `${API_BASE}${path}`;
+    console.log('Fetching:', fullPath);
     const res = await fetch(fullPath, {
       ...options,
       headers: { ...headers, ...options.headers }
@@ -26,7 +27,8 @@ export const api = {
 
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(`API Error: ${res.statusText} - ${text}`);
+      const statusText = res.statusText || `Status ${res.status}`;
+      throw new Error(`API Error: ${statusText} - ${text}`);
     }
     return res.json();
   },

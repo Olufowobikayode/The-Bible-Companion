@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ALL_BOOKS, fetchChapter, fetchBibleVerse, BOOK_CHAPTER_COUNTS } from '../lib/bible';
-import { askBibleQuestion, performSemanticSearch, getOriginalText, getCrossReferences } from '../lib/gemini';
+import { askBibleQuestion, performSemanticSearch, getOriginalText, getCrossReferences, getScriptureContext } from '../lib/gemini';
 import { TRANSLATIONS, Translation } from '../types';
 import { db_local } from '../lib/db';
 import { ChevronLeft, ChevronRight, Search, Loader2, Bookmark, MessageCircle, Share2, X, Languages, Download, CheckCircle2, BookOpenText, Sparkles } from 'lucide-react';
@@ -88,6 +88,17 @@ export default function Bible() {
     }
   }, [state, content, loading]);
 
+  useEffect(() => {
+    if (selectedVerse) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [selectedVerse]);
+
   const loadChapter = async () => {
     setLoading(true);
     setInsights(null);
@@ -95,6 +106,18 @@ export default function Bible() {
     setContent(data);
     setLoading(false);
     loadInsights(book, chapter);
+
+    // Track activity
+    if (user) {
+      try {
+        await api.post('/api/user/activity', {
+          type: 'bible_read',
+          metadata: { book, chapter, translation }
+        });
+      } catch (error) {
+        console.error("Failed to track Bible reading:", error);
+      }
+    }
   };
 
   const loadInsights = async (b: string, c: number) => {
@@ -545,7 +568,7 @@ export default function Bible() {
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative w-full max-w-lg bg-cream rounded-t-[2.5rem] sm:rounded-[2.5rem] shadow-2xl p-8 sm:p-12 border border-sage/10 mt-auto sm:mt-0"
+              className="relative w-full max-w-lg bg-cream rounded-t-[2.5rem] sm:rounded-[2.5rem] shadow-2xl p-8 sm:p-12 border border-sage/10 mt-auto sm:mt-0 max-h-[90vh] overflow-y-auto"
             >
               <button
                 onClick={() => setSelectedVerse(null)}
@@ -557,7 +580,9 @@ export default function Bible() {
                 <h3 className="serif text-2xl font-semibold text-sage-dark">{selectedVerse.reference}</h3>
                 <p className="serif italic text-xl text-ink/80 leading-relaxed">"{selectedVerse.text}"</p>
                 
-                <div className="pt-6 border-t border-sage/10">
+                <div className="pt-6 border-t border-sage/10 space-y-6">
+                  <ScriptureContext verseRef={selectedVerse.reference} verseText={selectedVerse.text} />
+                  
                   <CrossReferences 
                     verseRef={selectedVerse.reference} 
                     verseText={selectedVerse.text} 
@@ -638,6 +663,50 @@ function OriginalText({ verseRef, detailed }: { verseRef: string; detailed?: boo
   }
 
   return <span>{data.original}</span>;
+}
+
+function ScriptureContext({ verseRef, verseText }: { verseRef: string; verseText: string }) {
+  const [context, setContext] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const fetchContext = async () => {
+    setLoading(true);
+    try {
+      const result = await getScriptureContext(verseRef, verseText);
+      setContext(result);
+    } catch (err) {
+      console.error("Failed to load scripture context", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!context && !loading) {
+    return (
+      <button 
+        onClick={fetchContext}
+        className="flex items-center gap-2 text-xs font-bold text-sage hover:text-sage-dark transition-colors uppercase tracking-widest"
+      >
+        <BookOpenText className="w-3 h-3" />
+        Get Context & Synthesis
+      </button>
+    );
+  }
+
+  if (loading) return <span className="animate-pulse text-xs text-ink/30">Analyzing context...</span>;
+  if (!context) return null;
+
+  return (
+    <div className="space-y-3 bg-sage-light/20 p-4 rounded-2xl border border-sage/10">
+      <h4 className="text-xs font-bold text-sage-dark uppercase tracking-wider flex items-center gap-2">
+        <BookOpenText className="w-4 h-4" />
+        Scripture Context
+      </h4>
+      <div className="prose prose-sage prose-sm max-w-none text-ink/80 text-sm">
+        <ReactMarkdown>{context}</ReactMarkdown>
+      </div>
+    </div>
+  );
 }
 
 function CrossReferences({ verseRef, verseText, onNavigate }: { verseRef: string; verseText: string; onNavigate?: (book: string, chapter: number) => void }) {

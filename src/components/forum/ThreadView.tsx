@@ -2,10 +2,12 @@ import { useParams, Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { api } from '../../lib/api';
 import { useEffect, useState } from 'react';
-import { Trash2, ChevronLeft, Heart, MessageCircle } from 'lucide-react';
+import { Trash2, ChevronLeft, Heart, MessageCircle, Sparkles, Loader2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
 import { moderateContent } from '../../lib/moderation';
+import { summarizeForumThread } from '../../lib/gemini';
+import ReactMarkdown from 'react-markdown';
 
 interface Post {
   id: string;
@@ -32,6 +34,26 @@ export default function ThreadView() {
   const [user, setUser] = useState<any>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [replyingTo, setReplyingTo] = useState<Post | null>(null);
+  const [summary, setSummary] = useState<string | null>(null);
+  const [isSummarizing, setIsSummarizing] = useState(false);
+
+  const handleSummarize = async () => {
+    if (posts.length === 0) return;
+    setIsSummarizing(true);
+    try {
+      const formattedPosts = posts.map(p => ({
+        author: p.isAnonymous ? 'Anonymous' : p.authorName,
+        content: p.content
+      }));
+      const result = await summarizeForumThread(formattedPosts);
+      setSummary(result);
+    } catch (error) {
+      console.error("Error summarizing thread:", error);
+      toast.error("Failed to summarize thread.");
+    } finally {
+      setIsSummarizing(false);
+    }
+  };
 
   const fetchPosts = async () => {
     if (!forumId || !threadId) return;
@@ -100,16 +122,26 @@ export default function ThreadView() {
     }
   };
 
+  const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set());
+
   const handleLike = async (postId: string) => {
     if (!user) {
       toast.error("Please sign in to like posts.");
       return;
     }
+    if (likedPosts.has(postId)) return;
+
     try {
       await api.post(`/api/forums/${forumId}/threads/${threadId}/posts/${postId}/like`, {});
       setPosts(prev => prev.map(p => p.id === postId ? { ...p, likes: (p.likes || 0) + 1 } : p));
-    } catch (error) {
+      setLikedPosts(prev => new Set(prev).add(postId));
+    } catch (error: any) {
+      if (error.message && error.message.includes("Already liked")) {
+        setLikedPosts(prev => new Set(prev).add(postId));
+        return;
+      }
       console.error("Error liking post:", error);
+      toast.error("Failed to like post.");
     }
   };
 
@@ -128,7 +160,7 @@ export default function ThreadView() {
       const postData: any = {
         content: newPostContent,
         authorUid: user.id,
-        authorName: user.user_metadata?.full_name || 'Anonymous',
+        authorName: isAnonymous ? 'Anonymous' : (user.user_metadata?.full_name || user.email?.split('@')[0] || 'User'),
         isAnonymous,
       };
 
@@ -156,16 +188,42 @@ export default function ThreadView() {
 
   return (
     <div className="max-w-5xl mx-auto px-0 sm:px-4 py-6 sm:py-12">
-      <div className="mb-8 px-4 sm:px-0">
-        <Link to={`/forum/${forumId}`} className="text-sage hover:text-sage-dark mb-4 inline-flex items-center gap-2 text-sm font-medium transition-colors">
-          <ChevronLeft size={18} />
-          Back to Threads
-        </Link>
-        <h1 className="serif text-3xl sm:text-4xl font-semibold text-sage-dark">Discussion</h1>
+      <div className="mb-8 px-4 sm:px-0 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <Link to={`/forum/${forumId}`} className="text-sage hover:text-sage-dark mb-4 inline-flex items-center gap-2 text-sm font-medium transition-colors">
+            <ChevronLeft size={18} />
+            Back to Threads
+          </Link>
+          <h1 className="serif text-3xl sm:text-4xl font-semibold text-sage-dark">Discussion</h1>
+        </div>
+        <button
+          onClick={handleSummarize}
+          disabled={isSummarizing || posts.length === 0}
+          className="bg-sage-light/20 text-sage-dark border border-sage/20 px-4 py-2 rounded-xl font-medium hover:bg-sage-light transition-colors flex items-center gap-2 disabled:opacity-50 text-sm"
+        >
+          {isSummarizing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+          Summarize Thread
+        </button>
       </div>
+
+      {summary && (
+        <motion.div 
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-8 mx-4 sm:mx-0 bg-sage-light/30 p-6 rounded-3xl border border-sage/20"
+        >
+          <h3 className="serif text-xl font-semibold text-sage-dark mb-3 flex items-center gap-2">
+            <Sparkles className="w-5 h-5" />
+            AI Summary
+          </h3>
+          <div className="prose prose-sage prose-sm max-w-none text-ink/80">
+            <ReactMarkdown>{summary}</ReactMarkdown>
+          </div>
+        </motion.div>
+      )}
       
       <div className="grid gap-4 mb-8 px-4 sm:px-0">
-        {posts.map(post => (
+        {posts.filter(post => post.id).map(post => (
           <motion.div 
             key={post.id} 
             initial={{ opacity: 0, y: 10 }}

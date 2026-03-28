@@ -4,39 +4,50 @@ import { supabase } from '../lib/supabase';
 import { api } from '../lib/api';
 
 export default function Dashboard() {
-  const [stats, setStats] = useState({
+  const [stats, setStats] = useState<any>({
     prayers: 0,
     posts: 0,
     testimonies: 0,
     bookmarks: 0,
     notes: 0,
     studyJourneys: 0,
+    bibleReadCount: 0,
+    topicExploreCount: 0,
+    streak: 0,
   });
+  const [milestones, setMilestones] = useState<any[]>([]);
+  const [activities, setActivities] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<any>(null);
 
   useEffect(() => {
-    const fetchStats = async () => {
+    const fetchData = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (session) {
           setUser(session.user);
-          const dashboardStats = await api.get('/api/dashboard/stats');
+          const [dashboardStats, milestoneData, activityData] = await Promise.all([
+            api.get('/api/dashboard/stats'),
+            api.get('/api/milestones'),
+            api.get('/api/user/activity')
+          ]);
           setStats(dashboardStats);
+          setMilestones(milestoneData);
+          setActivities(activityData);
         }
       } catch (error) {
-        console.error("Error fetching dashboard stats:", error);
+        console.error("Error fetching dashboard data:", error);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchStats();
+    fetchData();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session) {
         setUser(session.user);
-        fetchStats();
+        fetchData();
       } else {
         setUser(null);
         setLoading(false);
@@ -101,25 +112,23 @@ export default function Dashboard() {
             Theological Milestones
           </h2>
           <div className="space-y-4">
-            {[
-              { title: "Seeker of Wisdom", desc: "Read Proverbs for 7 consecutive days.", icon: Award, achieved: true },
-              { title: "Heart of Worship", desc: "Explored 10 different Psalms.", icon: Activity, achieved: true },
-              { title: "Gospel Explorer", desc: "Completed the Gospel of John.", icon: TrendingUp, achieved: false },
-              { title: "Intercessor", desc: "Prayed for 50 brethren on the wall.", icon: Heart, achieved: false },
-            ].map((milestone, i) => (
-              <div key={i} className={`p-6 rounded-3xl border flex items-start gap-4 transition-all ${milestone.achieved ? 'bg-sage/5 border-sage/30 shadow-sm' : 'bg-white border-sage/10 opacity-60'}`}>
-                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${milestone.achieved ? 'bg-sage text-white shadow-lg shadow-sage/20' : 'bg-sage/10 text-sage/40'}`}>
-                  <milestone.icon className="w-6 h-6" />
+            {milestones.map((milestone, i) => {
+              const Icon = milestone.icon === 'Award' ? Award : milestone.icon === 'Activity' ? Activity : milestone.icon === 'Heart' ? Heart : TrendingUp;
+              return (
+                <div key={i} className={`p-6 rounded-3xl border flex items-start gap-4 transition-all ${milestone.achieved ? 'bg-sage/5 border-sage/30 shadow-sm' : 'bg-white border-sage/10 opacity-60'}`}>
+                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${milestone.achieved ? 'bg-sage text-white shadow-lg shadow-sage/20' : 'bg-sage/10 text-sage/40'}`}>
+                    <Icon className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-ink">{milestone.title}</h4>
+                    <p className="text-sm text-ink/60 leading-relaxed">{milestone.desc}</p>
+                    {milestone.achieved && (
+                      <span className="text-[10px] font-bold text-sage uppercase tracking-widest mt-2 block">Achieved</span>
+                    )}
+                  </div>
                 </div>
-                <div>
-                  <h4 className="font-bold text-ink">{milestone.title}</h4>
-                  <p className="text-sm text-ink/60 leading-relaxed">{milestone.desc}</p>
-                  {milestone.achieved && (
-                    <span className="text-[10px] font-bold text-sage uppercase tracking-widest mt-2 block">Achieved</span>
-                  )}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
@@ -130,27 +139,24 @@ export default function Dashboard() {
           </h2>
           <div className="bg-white rounded-[2rem] border border-sage/10 p-6 shadow-sm min-h-[400px]">
             <div className="space-y-6">
-              <div className="flex gap-4">
-                <div className="w-2 h-2 rounded-full bg-sage mt-2 shrink-0" />
-                <div>
-                  <p className="text-sm font-medium text-ink">Shared a testimony</p>
-                  <p className="text-xs text-ink/40">2 hours ago</p>
+              {activities.length > 0 ? activities.map((activity, i) => (
+                <div key={i} className="flex gap-4">
+                  <div className="w-2 h-2 rounded-full bg-sage mt-2 shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-ink">
+                      {activity.type === 'bible_read' && `Read ${activity.metadata.book} ${activity.metadata.chapter}`}
+                      {activity.type === 'topic_explore' && `Explored topic: ${activity.metadata.topic}`}
+                      {activity.type === 'prayer_post' && `Posted a prayer request`}
+                      {activity.type === 'prayer_react' && `Prayed for a brother/sister`}
+                      {activity.type === 'testimony_share' && `Shared a testimony`}
+                      {activity.type === 'note_create' && `Created a new note`}
+                    </p>
+                    <p className="text-xs text-ink/40">{new Date(activity.createdAt).toLocaleDateString()} at {new Date(activity.createdAt).toLocaleDateString()}</p>
+                  </div>
                 </div>
-              </div>
-              <div className="flex gap-4">
-                <div className="w-2 h-2 rounded-full bg-sage mt-2 shrink-0" />
-                <div>
-                  <p className="text-sm font-medium text-ink">Prayed for "Healing for my mother"</p>
-                  <p className="text-xs text-ink/40">Yesterday</p>
-                </div>
-              </div>
-              <div className="flex gap-4">
-                <div className="w-2 h-2 rounded-full bg-sage mt-2 shrink-0" />
-                <div>
-                  <p className="text-sm font-medium text-ink">Completed Day 5 of "The Heart of Jesus"</p>
-                  <p className="text-xs text-ink/40">2 days ago</p>
-                </div>
-              </div>
+              )) : (
+                <p className="text-sm text-ink/40 italic">No recent activity recorded.</p>
+              )}
             </div>
           </div>
         </div>

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Trash2, Heart, Loader2, Share2, MessageSquare, Send } from 'lucide-react';
+import { Trash2, Heart, Loader2, Share2, MessageSquare, Send, Sparkles } from 'lucide-react';
 import { motion } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { moderateContent } from '../../lib/moderation';
 import { api } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
+import { generatePrayerCompanion } from '../../lib/gemini';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -37,6 +38,7 @@ export default function PrayerWall() {
   const [viewingPrayersId, setViewingPrayersId] = useState<string | null>(null);
   const [typedPrayersList, setTypedPrayersList] = useState<any[]>([]);
   const [user, setUser] = useState<any>(null);
+  const [isGeneratingPrayer, setIsGeneratingPrayer] = useState(false);
 
   useEffect(() => {
     const fetchInitialData = async () => {
@@ -99,7 +101,7 @@ export default function PrayerWall() {
 
       const request = await api.post('/api/prayer-requests', {
         content: newRequest,
-        authorName: user.user_metadata?.full_name || 'Anonymous',
+        authorName: user.user_metadata?.full_name || user.email?.split('@')[0] || 'User',
         isAnonymous
       });
       
@@ -107,6 +109,12 @@ export default function PrayerWall() {
       setNewRequest('');
       setIsAnonymous(false);
       toast.success("Prayer request posted!");
+
+      // Track activity
+      await api.post('/api/user/activity', {
+        type: 'prayer_post',
+        metadata: { length: newRequest.length }
+      });
     } catch (error) {
       console.error("Error submitting prayer request:", error);
       toast.error("Failed to post prayer request.");
@@ -155,6 +163,14 @@ export default function PrayerWall() {
       ));
 
       toast.success(result.prayed ? "Prayer registered!" : "Prayer removed.");
+
+      // Track activity
+      if (result.prayed) {
+        await api.post('/api/user/activity', {
+          type: 'prayer_react',
+          metadata: { prayerId: id }
+        });
+      }
     } catch (error) {
       console.error("Error updating prayer status:", error);
       toast.error("Failed to update prayer status.");
@@ -175,7 +191,7 @@ export default function PrayerWall() {
 
       await api.post(`/api/prayer-requests/${id}/typed-prayers`, {
         text: typedPrayer,
-        authorName: user.user_metadata?.full_name || 'Anonymous'
+        authorName: user.user_metadata?.full_name || user.email?.split('@')[0] || 'User'
       });
 
       setTypedPrayer('');
@@ -186,6 +202,20 @@ export default function PrayerWall() {
       toast.error("Failed to share prayer.");
     } finally {
       setIsTypingSubmitting(false);
+    }
+  };
+
+  const handleGeneratePrayer = async (requestContent: string) => {
+    setIsGeneratingPrayer(true);
+    try {
+      const generated = await generatePrayerCompanion(requestContent);
+      setTypedPrayer(generated);
+      toast.success('Prayer drafted. Feel free to edit it.');
+    } catch (error) {
+      console.error('Failed to generate prayer:', error);
+      toast.error('Failed to generate prayer.');
+    } finally {
+      setIsGeneratingPrayer(false);
     }
   };
 
@@ -257,7 +287,7 @@ export default function PrayerWall() {
             <p className="serif text-lg sm:text-xl text-sage-dark mb-1 leading-relaxed">"{request.content}"</p>
             <div className="flex items-center gap-2 mb-6">
               <span className="text-[10px] text-ink/40 italic">
-                — {request.isAnonymous ? 'Anonymous' : (request.authorName || 'Unknown')}
+                — {request.isAnonymous ? 'Anonymous' : (request.authorName || 'User')}
               </span>
               {request.createdAt && (
                 <span className="text-[10px] text-ink/20 font-medium">
@@ -373,7 +403,20 @@ export default function PrayerWall() {
             animate={{ opacity: 1, scale: 1 }}
             className="bg-white p-8 rounded-[2.5rem] max-w-md w-full shadow-2xl"
           >
-            <h3 className="serif text-2xl font-semibold text-sage-dark mb-4">Type a Prayer</h3>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="serif text-2xl font-semibold text-sage-dark">Type a Prayer</h3>
+              <button
+                onClick={() => {
+                  const req = requests.find(r => r.id === typingPrayerId);
+                  if (req) handleGeneratePrayer(req.content);
+                }}
+                disabled={isGeneratingPrayer}
+                className="text-xs font-bold text-sage hover:text-sage-dark transition-colors uppercase tracking-widest flex items-center gap-1 disabled:opacity-50"
+              >
+                {isGeneratingPrayer ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                AI Draft
+              </button>
+            </div>
             <textarea
               value={typedPrayer}
               onChange={(e) => setTypedPrayer(e.target.value)}

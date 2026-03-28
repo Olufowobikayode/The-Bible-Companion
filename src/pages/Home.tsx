@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { generateEmotionResponse, safeParseJSON } from '../lib/gemini';
+import { generateEmotionResponse, safeParseJSON, generatePersonalDevotional } from '../lib/gemini';
 import { supabase } from '../lib/supabase';
 import { api } from '../lib/api';
-import { Search, Heart, Loader2, Sparkles } from 'lucide-react';
+import { Search, Heart, Loader2, Sparkles, BookOpen } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { toast } from 'sonner';
 import { User as SupabaseUser } from '@supabase/supabase-js';
@@ -17,6 +17,8 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [response, setResponse] = useState<any>(null);
   const [user, setUser] = useState<SupabaseUser | null>(null);
+  const [devotional, setDevotional] = useState<string | null>(null);
+  const [loadingDevotional, setLoadingDevotional] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -29,6 +31,20 @@ export default function Home() {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  const handleGenerateDevotional = async () => {
+    setLoadingDevotional(true);
+    try {
+      // In a real app, fetch user's recent bookmarks/notes to pass here
+      const result = await generatePersonalDevotional(["Peace", "Hope"], "Recently read John 3");
+      setDevotional(result);
+    } catch (error) {
+      console.error('Failed to generate devotional:', error);
+      toast.error('Failed to generate devotional.');
+    } finally {
+      setLoadingDevotional(false);
+    }
+  };
 
   const handleSubmit = async (e?: React.FormEvent, selectedEmotion?: string) => {
     e?.preventDefault();
@@ -99,6 +115,37 @@ export default function Home() {
           Find Scripture, encouragement, and peace during difficult moments.
         </motion.p>
       </div>
+
+      {user && (
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          className="mb-12 bg-white rounded-[2rem] p-8 shadow-xl shadow-sage/5 border border-sage/10 text-center"
+        >
+          <h2 className="serif text-2xl font-semibold text-sage-dark mb-4">Your Daily Devotional</h2>
+          <p className="text-ink/60 mb-6">A personalized reflection based on your recent study and prayers.</p>
+          
+          {!devotional && !loadingDevotional ? (
+            <button
+              onClick={handleGenerateDevotional}
+              className="bg-sage text-white px-6 py-3 rounded-full font-medium hover:bg-sage-dark transition-colors inline-flex items-center gap-2"
+            >
+              <BookOpen className="w-5 h-5" />
+              Generate Today's Devotional
+            </button>
+          ) : loadingDevotional ? (
+            <div className="flex flex-col items-center gap-4 py-8 text-sage">
+              <Loader2 className="w-8 h-8 animate-spin" />
+              <p className="text-sm">Seeking wisdom for your day...</p>
+            </div>
+          ) : (
+            <div className="prose prose-sage max-w-none text-left bg-sage-light/20 p-6 rounded-2xl border border-sage/10">
+              <ReactMarkdown>{devotional || ""}</ReactMarkdown>
+            </div>
+          )}
+        </motion.div>
+      )}
 
       <motion.div 
         initial={{ opacity: 0, scale: 0.95 }}

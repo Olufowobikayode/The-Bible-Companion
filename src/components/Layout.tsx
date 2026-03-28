@@ -9,6 +9,7 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import AuthModal from './AuthModal';
 import NotificationCenter from './NotificationCenter';
+import GlobalSearch from './GlobalSearch';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -39,10 +40,10 @@ export default function Layout({ children }: LayoutProps) {
     // Initial check
     handleOnlineStatus();
 
-    // Check Gemini API Key
-    if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === 'undefined') {
-      setIsGeminiMissing(true);
-    }
+    // Check Gemini API Key (Backend handles this, so we just assume it's there or handle errors gracefully)
+    // if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === 'undefined') {
+    //   setIsGeminiMissing(true);
+    // }
 
     return () => {
       window.removeEventListener('online', handleOnlineStatus);
@@ -75,7 +76,6 @@ export default function Layout({ children }: LayoutProps) {
         { name: 'Devotionals', path: '/devotional', icon: Book },
         { name: 'Holy Spirit Guidance', path: '/chat', icon: MessageCircle },
         { name: 'Prayer Journal', path: '/notepad', icon: PenLine },
-        { name: 'Spiritual Dashboard', path: '/dashboard', icon: Activity },
         { name: 'Study Journeys', path: '/study-journeys', icon: BookOpen },
       ]
     },
@@ -84,10 +84,10 @@ export default function Layout({ children }: LayoutProps) {
       items: [
         { name: 'Community Tabernacle', path: '/forum', icon: MessageSquare },
         { name: 'Cloud of Witnesses', path: '/testimonies', icon: Heart },
-        { name: 'Search Brethren', path: '/search', icon: Search },
         { name: 'Prayer Groups', path: '/community', icon: UserIcon },
-        { name: 'Brethren', path: '/friends', icon: UserIcon },
-        { name: 'Word for Someone', path: '/messages', icon: Send },
+        { name: 'Messages', path: '/messages', icon: Send },
+        { name: 'My Bookmarks', path: '/bookmarks', icon: Bookmark },
+        { name: 'My Profile', path: '/profile', icon: UserIcon },
       ]
     },
     {
@@ -100,7 +100,7 @@ export default function Layout({ children }: LayoutProps) {
     {
       title: 'Resources',
       items: [
-        { name: 'Worship Sanctuary', path: '/media', icon: Play },
+        { name: 'Media Search', path: '/media', icon: Search },
         { name: 'Manna (Offline)', path: '/offline', icon: Database },
       ]
     }
@@ -116,8 +116,22 @@ export default function Layout({ children }: LayoutProps) {
     { name: 'Forum', path: '/forum', icon: MessageSquare },
   ];
 
+  if (isAuthLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-cream">
+        <motion.div
+          animate={{ scale: [1, 1.05, 1], opacity: [0.5, 1, 0.5] }}
+          transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+          className="flex flex-col items-center space-y-6"
+        >
+          <h1 className="serif text-5xl md:text-6xl font-bold text-sage-dark tracking-[0.2em]">VISION</h1>
+        </motion.div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen flex flex-col bg-cream">
+    <div className="min-h-screen flex flex-col bg-cream font-sans">
       <DailyScripture />
       {(isFirebaseOffline || isGeminiMissing) && (
         <div className="bg-destructive text-white px-4 py-2 text-center text-[10px] sm:text-xs font-bold sticky top-0 z-[100] animate-pulse">
@@ -128,44 +142,50 @@ export default function Layout({ children }: LayoutProps) {
       )}
       <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
       
-      <header className="sticky top-0 z-50 bg-cream border-b border-sage/10 shadow-sm safe-top">
+      <header className="sticky top-0 z-50 bg-cream/80 backdrop-blur-xl border-b border-sage/10 shadow-sm safe-top transition-all duration-500">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16 md:h-20">
+          <div className="flex justify-between items-center h-20 md:h-24">
             <Link to="/" className="flex items-center space-x-3 group">
-              <div className="w-9 h-9 md:w-11 md:h-11 bg-sage rounded-xl flex items-center justify-center text-white shadow-lg shadow-sage/20 group-hover:scale-105 transition-transform">
-                <Book className="w-5 h-5 md:w-6 md:h-6" />
-              </div>
-              <span className="serif text-xl md:text-2xl font-bold text-sage-dark tracking-tight">The Bible Companion</span>
+              <span className="serif text-2xl md:text-3xl font-bold text-sage-dark tracking-[0.15em]">VISION</span>
             </Link>
 
+            <div className="hidden lg:block flex-1 max-w-md mx-8">
+              <GlobalSearch />
+            </div>
+
             {/* Desktop Nav */}
-            <nav className="hidden md:flex items-center space-x-1">
+            <nav className="hidden md:flex items-center space-x-2">
               {navItems.slice(0, 6).map((item) => (
                 <Link
                   key={item.path}
                   to={item.path}
                   className={cn(
-                    "px-4 py-2 rounded-xl text-sm font-semibold transition-all hover:bg-sage-light/50",
-                    location.pathname === item.path ? "text-sage-dark bg-sage-light" : "text-ink/60 hover:text-sage-dark"
+                    "px-5 py-2.5 rounded-[2rem] text-sm font-medium transition-all duration-300",
+                    location.pathname === item.path ? "text-sage-dark bg-sage/10 shadow-sm" : "text-ink/60 hover:text-sage-dark hover:bg-sage/5"
                   )}
                 >
                   {item.name}
                 </Link>
               ))}
-              <div className="w-px h-6 bg-sage/10 mx-4" />
-              {isAuthLoading ? (
-                <div className="w-24 h-10 bg-sage/5 animate-pulse rounded-xl" />
-              ) : user ? (
-                <div className="flex items-center space-x-3 pl-2">
+              <div className="w-px h-6 bg-sage/20 mx-4" />
+              {user ? (
+                <div className="flex items-center space-x-4 pl-2">
                   <NotificationCenter />
-                  <div className="flex flex-col items-end">
-                    <span className="text-xs font-bold text-ink/80 leading-none">{user.user_metadata?.full_name || user.email}</span>
-                    <span className="text-[10px] text-sage font-bold uppercase tracking-widest mt-1">Member</span>
-                  </div>
-                  <img src={user.user_metadata?.avatar_url || null} alt="" className="w-10 h-10 rounded-xl border-2 border-white shadow-md" />
+                  <Link to="/profile" className="flex items-center space-x-3 hover:opacity-80 transition-opacity">
+                    <div className="flex flex-col items-end">
+                      <span className="text-sm font-medium text-ink/80 leading-none">{user.user_metadata?.full_name || user.email}</span>
+                    </div>
+                    {user.user_metadata?.avatar_url ? (
+                      <img src={user.user_metadata.avatar_url} alt="" className="w-10 h-10 rounded-full border border-sage/20 shadow-sm object-cover" />
+                    ) : (
+                      <div className="w-10 h-10 rounded-full bg-sage-light flex items-center justify-center text-sage font-bold border border-sage/20 shadow-sm">
+                        {(user.user_metadata?.full_name || user.email || 'U')[0].toUpperCase()}
+                      </div>
+                    )}
+                  </Link>
                   <button 
                     onClick={handleLogout} 
-                    className="p-2 text-ink/30 hover:text-red-500 transition-colors hover:bg-red-50 rounded-lg"
+                    className="p-2.5 text-ink/40 hover:text-sage-dark transition-colors hover:bg-sage/10 rounded-full"
                     title="Sign Out"
                   >
                     <LogOut size={18} />
@@ -174,7 +194,7 @@ export default function Layout({ children }: LayoutProps) {
               ) : (
                 <button
                   onClick={() => setIsAuthModalOpen(true)}
-                  className="bg-sage text-white px-8 py-2.5 rounded-xl text-sm font-bold hover:bg-sage-dark transition-all shadow-lg shadow-sage/20 active:scale-95"
+                  className="bg-sage text-white px-8 py-3 rounded-[2rem] text-sm font-medium hover:bg-sage-dark transition-all shadow-md shadow-sage/10 active:scale-95"
                 >
                   Sign In
                 </button>
@@ -184,29 +204,27 @@ export default function Layout({ children }: LayoutProps) {
             {/* Mobile Menu Toggle */}
             <div className="md:hidden flex items-center space-x-3">
               {user && <NotificationCenter />}
-              {isAuthLoading ? (
-                <div className="w-8 h-8 bg-sage/5 animate-pulse rounded-lg" />
-              ) : user ? (
+              {user ? (
                 <button 
                   onClick={() => setIsMenuOpen(true)}
-                  className="flex items-center space-x-2 p-1 pr-3 bg-white rounded-xl border border-sage/10 shadow-sm active:scale-95 transition-transform"
+                  className="flex items-center space-x-2 p-1.5 pr-3 bg-white rounded-[2rem] border border-sage/10 shadow-sm active:scale-95 transition-transform"
                 >
-                  <img src={user.user_metadata?.avatar_url || null} alt="" className="w-8 h-8 rounded-lg border border-sage-light shadow-sm" />
+                  <img src={user.user_metadata?.avatar_url || null} alt="" className="w-8 h-8 rounded-full border border-sage/10" />
                   <Menu size={18} className="text-sage-dark" />
                 </button>
               ) : (
                 <div className="flex items-center space-x-2">
                   <button
                     onClick={() => setIsAuthModalOpen(true)}
-                    className="text-xs font-bold text-sage-dark uppercase tracking-widest px-3 py-2"
+                    className="text-xs font-medium text-sage-dark uppercase tracking-widest px-3 py-2"
                   >
                     Sign In
                   </button>
                   <button 
-                    className="bg-white p-2 rounded-xl text-sage-dark border border-sage/10 shadow-sm active:scale-95 transition-transform" 
+                    className="bg-white p-2.5 rounded-full text-sage-dark border border-sage/10 shadow-sm active:scale-95 transition-transform" 
                     onClick={() => setIsMenuOpen(!isMenuOpen)}
                   >
-                    <Menu size={22} />
+                    <Menu size={20} />
                   </button>
                 </div>
               )}
@@ -214,115 +232,118 @@ export default function Layout({ children }: LayoutProps) {
           </div>
         </div>
 
-        {/* Mobile Nav Overlay */}
-        <AnimatePresence>
-          {isMenuOpen && (
-            <>
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                onClick={() => setIsMenuOpen(false)}
-                className="fixed inset-0 bg-ink/40 backdrop-blur-md z-40 md:hidden"
-              />
-              <motion.div
-                initial={{ x: '100%' }}
-                animate={{ x: 0 }}
-                exit={{ x: '100%' }}
-                transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                className="fixed right-0 top-0 bottom-0 w-[85%] max-w-sm bg-white z-50 md:hidden shadow-[-20px_0_50px_rgba(0,0,0,0.1)] flex flex-col safe-top safe-bottom"
-              >
-                <div className="p-6 flex justify-between items-center border-b border-sage/10 bg-white/50">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-9 h-9 bg-sage rounded-xl flex items-center justify-center text-white shadow-lg shadow-sage/20">
-                      <Book className="w-5 h-5" />
-                    </div>
-                    <span className="serif text-xl font-bold text-sage-dark">Library Menu</span>
-                  </div>
-                  <button 
-                    onClick={() => setIsMenuOpen(false)} 
-                    className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-sage-light text-ink/40 transition-colors"
-                  >
-                    <X size={24} />
-                  </button>
-                </div>
-                
-                <div className="flex-grow overflow-y-auto p-6 space-y-8">
-                  {user && (
-                    <div className="flex items-center space-x-4 p-4 bg-sage-light/10 rounded-3xl mb-6 border border-sage/5">
-                      <img src={user.user_metadata?.avatar_url || null} alt="" className="w-14 h-14 rounded-full border-2 border-white shadow-md" />
-                      <div className="overflow-hidden">
-                        <p className="font-bold text-ink/80 truncate">{user.user_metadata?.full_name || user.email}</p>
-                        <p className="text-xs text-ink/40 truncate">{user.email}</p>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {navGroups.map((group) => (
-                    <div key={group?.title || ''} className="space-y-3">
-                      <h3 className="text-[10px] font-bold text-sage uppercase tracking-[0.2em] px-4">{group?.title || ''}</h3>
-                      <div className="grid grid-cols-1 gap-1">
-                        {group.items.map((item) => (
-                          <Link
-                            key={item.path}
-                            to={item.path}
-                            onClick={() => setIsMenuOpen(false)}
-                            className={cn(
-                              "flex items-center space-x-4 px-4 py-3.5 rounded-2xl text-base font-medium transition-all group",
-                              location.pathname === item.path 
-                                ? "bg-sage text-white shadow-lg shadow-sage/20" 
-                                : "text-ink/60 hover:bg-sage-light/10 hover:text-sage-dark"
-                            )}
-                          >
-                            <div className={cn(
-                              "p-2 rounded-xl transition-colors",
-                              location.pathname === item.path ? "bg-white/20" : "bg-sage-light/5 group-hover:bg-sage-light/20"
-                            )}>
-                              <item.icon className="w-5 h-5" />
-                            </div>
-                            <span>{item.name}</span>
-                          </Link>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="p-6 border-t border-sage/10 bg-white/50 space-y-4">
-                  {!user ? (
-                    <button
-                      onClick={() => { setIsMenuOpen(false); setIsAuthModalOpen(true); }}
-                      className="w-full bg-sage text-white px-4 py-4 rounded-2xl text-base font-bold hover:bg-sage-dark shadow-xl shadow-sage/20 active:scale-95 transition-all"
-                    >
-                      Sign In to Your Account
-                    </button>
-                  ) : (
-                    <button
-                      onClick={handleLogout}
-                      className="w-full flex items-center justify-center space-x-2 text-red-500 px-4 py-4 rounded-2xl border border-red-100 bg-red-50/5 font-bold hover:bg-red-100/20 transition-colors"
-                    >
-                      <LogOut size={20} />
-                      <span>Sign Out</span>
-                    </button>
-                  )}
-                  <p className="text-[10px] text-center text-ink/30 uppercase tracking-[0.2em] font-medium">
-                    The Bible Companion • v1.0
-                  </p>
-                </div>
-              </motion.div>
-            </>
-          )}
-        </AnimatePresence>
       </header>
+
+      {/* Mobile Nav Overlay */}
+      <AnimatePresence>
+        {isMenuOpen && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.4, ease: "easeInOut" }}
+              onClick={() => setIsMenuOpen(false)}
+              className="fixed inset-0 bg-cream/80 backdrop-blur-sm z-[60] md:hidden"
+            />
+            <motion.div
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 30, stiffness: 250 }}
+              className="fixed right-0 top-0 bottom-0 w-[85%] max-w-sm bg-cream z-[70] md:hidden shadow-[-20px_0_50px_rgba(0,0,0,0.05)] flex flex-col safe-top safe-bottom border-l border-sage/10"
+            >
+              <div className="p-6 flex justify-between items-center border-b border-sage/10">
+                <span className="serif text-2xl font-bold text-sage-dark tracking-[0.15em]">VISION</span>
+                <button 
+                  onClick={() => setIsMenuOpen(false)} 
+                  className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-sage/10 text-ink/60 transition-colors"
+                >
+                  <X size={24} />
+                </button>
+              </div>
+              
+              <div className="flex-grow overflow-y-auto p-6 space-y-8">
+                <div className="mb-6">
+                  <GlobalSearch />
+                </div>
+                {user && (
+                  <Link to="/profile" onClick={() => setIsMenuOpen(false)} className="flex items-center space-x-4 p-4 bg-white rounded-[2rem] mb-6 border border-sage/10 shadow-sm hover:bg-sage/5 transition-colors">
+                    {user.user_metadata?.avatar_url ? (
+                      <img src={user.user_metadata.avatar_url} alt="" className="w-14 h-14 rounded-full border border-sage/20 object-cover" />
+                    ) : (
+                      <div className="w-14 h-14 rounded-full bg-sage-light flex items-center justify-center text-sage font-bold border border-sage/20 shadow-sm text-xl">
+                        {(user.user_metadata?.full_name || user.email || 'U')[0].toUpperCase()}
+                      </div>
+                    )}
+                    <div className="overflow-hidden">
+                      <p className="font-medium text-ink/80 truncate">{user.user_metadata?.full_name || user.email}</p>
+                      <p className="text-xs text-ink/40 truncate">{user.email}</p>
+                    </div>
+                  </Link>
+                )}
+                
+                {navGroups.map((group) => (
+                  <div key={group?.title || ''} className="space-y-3">
+                    <h3 className="text-[10px] font-medium text-sage uppercase tracking-[0.2em] px-4">{group?.title || ''}</h3>
+                    <div className="grid grid-cols-1 gap-1">
+                      {group.items.map((item) => (
+                        <Link
+                          key={item.path}
+                          to={item.path}
+                          onClick={() => setIsMenuOpen(false)}
+                          className={cn(
+                            "flex items-center space-x-4 px-4 py-3.5 rounded-[2rem] text-base font-medium transition-all group",
+                            location.pathname === item.path 
+                              ? "bg-sage/10 text-sage-dark shadow-sm" 
+                              : "text-ink/60 hover:bg-sage/5 hover:text-sage-dark"
+                          )}
+                        >
+                          <div className={cn(
+                            "p-2 rounded-full transition-colors",
+                            location.pathname === item.path ? "bg-white" : "bg-sage/5 group-hover:bg-sage/10"
+                          )}>
+                            <item.icon className="w-5 h-5" />
+                          </div>
+                          <span>{item.name}</span>
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="p-6 border-t border-sage/10 bg-white/50 space-y-4">
+                {!user ? (
+                  <button
+                    onClick={() => { setIsMenuOpen(false); setIsAuthModalOpen(true); }}
+                    className="w-full bg-sage text-white px-4 py-4 rounded-[2rem] text-base font-medium hover:bg-sage-dark shadow-md shadow-sage/10 active:scale-95 transition-all"
+                  >
+                    Sign In
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleLogout}
+                    className="w-full flex items-center justify-center space-x-2 text-sage-dark px-4 py-4 rounded-[2rem] border border-sage/20 bg-white font-medium hover:bg-sage/5 transition-colors"
+                  >
+                    <LogOut size={20} />
+                    <span>Sign Out</span>
+                  </button>
+                )}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       <main className="flex-grow pb-24 md:pb-0">
         <AnimatePresence mode="wait">
           <motion.div
             key={location.pathname}
-            initial={{ opacity: 0, y: 10 }}
+            initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.3 }}
+            exit={{ opacity: 0, y: -20 }}
+            transition={{ duration: 0.5, ease: "easeOut" }}
           >
             {children}
           </motion.div>
@@ -330,32 +351,37 @@ export default function Layout({ children }: LayoutProps) {
       </main>
 
       {/* Mobile Bottom Nav */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-cream/90 backdrop-blur-lg border-t border-sage/10 z-50 safe-bottom">
-        <div className="flex justify-around items-center h-16 px-2">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-cream/90 backdrop-blur-xl border-t border-sage/10 z-50 safe-bottom">
+        <div className="flex justify-around items-center h-20 px-2">
           {bottomNavItems.map((item) => (
             <Link
               key={item.path}
               to={item.path}
               className={cn(
-                "flex flex-col items-center justify-center space-y-1 flex-1 h-full transition-all",
-                location.pathname === item.path ? "text-sage-dark scale-110" : "text-ink/40"
+                "flex flex-col items-center justify-center space-y-1.5 flex-1 h-full transition-all duration-300",
+                location.pathname === item.path ? "text-sage-dark scale-105" : "text-ink/40 hover:text-ink/60"
               )}
             >
-              <item.icon className={cn("w-5 h-5", location.pathname === item.path && "fill-sage/10")} />
-              <span className="text-[10px] font-bold uppercase tracking-tighter">{item.name}</span>
+              <div className={cn(
+                "p-2 rounded-full transition-colors duration-300",
+                location.pathname === item.path ? "bg-sage/10" : "bg-transparent"
+              )}>
+                <item.icon className={cn("w-5 h-5", location.pathname === item.path && "fill-sage/10")} />
+              </div>
+              <span className="text-[10px] font-medium tracking-wide">{item.name}</span>
             </Link>
           ))}
         </div>
       </nav>
 
-      <footer className="bg-cream border-t border-sage/10 py-12 mt-20 hidden md:block">
+      <footer className="bg-cream border-t border-sage/10 py-16 mt-20 hidden md:block">
         <div className="max-w-7xl mx-auto px-4 text-center">
-          <p className="serif text-xl text-sage-dark mb-4">The Bible Companion</p>
-          <p className="text-ink/40 text-sm max-w-md mx-auto">
-            A quiet place for Scripture, encouragement, and peace during difficult moments. Interactive faith-based companion with AI-powered guidance, full Bible access, and daily devotionals.
+          <p className="serif text-3xl text-sage-dark mb-6 tracking-[0.15em]">VISION</p>
+          <p className="text-ink/60 text-sm max-w-md mx-auto leading-relaxed">
+            A respectful, calm, prayerful digital companion for Bible reading, daily encouragement, prayer support, study, community interaction, and spiritual growth.
           </p>
-          <div className="mt-8 pt-8 border-t border-sage/5 text-ink/30 text-xs">
-            © {new Date().getFullYear()} The Bible Companion. All rights reserved.
+          <div className="mt-12 pt-8 border-t border-sage/10 text-ink/40 text-xs tracking-widest uppercase">
+            © {new Date().getFullYear()} VISION. All rights reserved.
           </div>
         </div>
       </footer>

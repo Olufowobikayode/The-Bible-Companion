@@ -1,54 +1,156 @@
-import React, { useState, useEffect } from 'react';
-import { Send, User as UserIcon, MessageCircle } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Send, User as UserIcon, MessageCircle, ChevronLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '../lib/supabase';
 import { api } from '../lib/api';
 import { moderateContent } from '../lib/moderation';
+import { Link, useLocation } from 'react-router-dom';
 
 interface Message {
-  id: string;
-  from: string;
+  _id: string;
+  senderId: string;
+  recipientId: string;
   text: string;
   createdAt: any;
-  recipientId?: string;
+  read?: boolean;
+}
+
+interface UserProfile {
+  uid: string;
+  username: string;
+  displayName: string;
+  photoURL?: string;
+}
+
+interface Conversation {
+  otherUserId: string;
+  profile?: UserProfile;
+  messages: Message[];
+  unreadCount: number;
 }
 
 export default function Messages() {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const location = useLocation();
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const queryParams = new URLSearchParams(location.search);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(location.state?.userId || queryParams.get('userId') || null);
   const [newMessage, setNewMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [user, setUser] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const fetchMessages = async () => {
+  const fetchMessages = async (currentUserId: string) => {
     try {
-      const data = await api.get('/api/messages');
-      setMessages(data);
+      setIsLoading(true);
+      const data: Message[] = await api.get('/api/messages');
+      
+      // Group messages by other user
+      const convosMap = new Map<string, Conversation>();
+      
+      // If we came from a profile or notification, ensure that conversation exists even if empty
+      const initialUserId = location.state?.userId || queryParams.get('userId');
+      if (initialUserId && initialUserId !== currentUserId) {
+        convosMap.set(initialUserId, {
+          otherUserId: initialUserId,
+          messages: [],
+          unreadCount: 0
+        });
+      }
+      
+      data.forEach(msg => {
+        // Skip global messages for private chat
+        if (msg.recipientId === 'global') return;
+        
+        const otherUserId = msg.senderId === currentUserId ? msg.recipientId : msg.senderId;
+        
+        if (!convosMap.has(otherUserId)) {
+          convosMap.set(otherUserId, {
+            otherUserId,
+            messages: [],
+            unreadCount: 0
+          });
+        }
+        
+        const convo = convosMap.get(otherUserId)!;
+        convo.messages.push(msg);
+        
+        // Count unread if we are the recipient
+        if (msg.recipientId === currentUserId && !msg.read) {
+          convo.unreadCount++;
+        }
+      });
+
+      // Fetch profiles for all other users
+      const convosArray = Array.from(convosMap.values());
+      
+      // Sort messages in each convo
+      convosArray.forEach(c => c.messages.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()));
+      
+      // Sort convos by latest message
+      convosArray.sort((a, b) => {
+        const lastA = a.messages[a.messages.length - 1];
+        const lastB = b.messages[b.messages.length - 1];
+        return new Date(lastB.createdAt).getTime() - new Date(lastA.createdAt).getTime();
+      });
+
+      // Fetch profiles
+      const profilesPromises = convosArray.map(async (c) => {
+        try {
+          const profile = await api.get(`/api/user-profiles/${c.otherUserId}`);
+          return { ...c, profile };
+        } catch (e) {
+          return c;
+        }
+      });
+
+      const convosWithProfiles = await Promise.all(profilesPromises);
+      setConversations(convosWithProfiles);
+      
     } catch (error) {
       console.error("Error fetching messages:", error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
-      if (session?.user) fetchMessages();
+      if (session?.user) fetchMessages(session.user.id);
+      else setIsLoading(false);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
-      if (session?.user) fetchMessages();
-      else setMessages([]);
+      if (session?.user) fetchMessages(session.user.id);
+      else {
+        setConversations([]);
+        setIsLoading(false);
+      }
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
+  useEffect(() => {
+    if (activeConversationId) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      
+      // Mark as read (optimistic)
+      setConversations(prev => prev.map(c => {
+        if (c.otherUserId === activeConversationId && c.unreadCount > 0) {
+          // In a real app, we'd call an API to mark as read here
+          return { ...c, unreadCount: 0 };
+        }
+        return c;
+      }));
+    }
+  }, [activeConversationId, conversations.find(c => c.otherUserId === activeConversationId)?.messages.length]);
+
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim() || !user) {
-      if (!user) toast.error("Please sign in to send a message.");
-      return;
-    }
+    if (!newMessage.trim() || !user || !activeConversationId) return;
     
     setIsSending(true);
     try {
@@ -60,10 +162,21 @@ export default function Messages() {
         return;
       }
 
-      // In the main Messages page, we might want to select a recipient.
-      // For now, if no recipient is selected, we'll show an error or default to a specific flow.
-      // The user wants messages to be strictly between users.
-      toast.info("To send a private message, please visit a user's profile and click 'Send a Word'.");
+      const newMsg = await api.post('/api/messages', {
+        text: newMessage,
+        recipientId: activeConversationId
+      });
+
+      // Optimistically add message
+      setConversations(prev => prev.map(c => {
+        if (c.otherUserId === activeConversationId) {
+          return {
+            ...c,
+            messages: [...c.messages, newMsg]
+          };
+        }
+        return c;
+      }));
       
       setNewMessage('');
     } catch (error) {
@@ -74,9 +187,15 @@ export default function Messages() {
     }
   };
 
+  const activeConvo = conversations.find(c => c.otherUserId === activeConversationId);
+
+  if (isLoading) {
+    return <div className="flex justify-center items-center min-h-[50vh]"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sage"></div></div>;
+  }
+
   return (
-    <div className="max-w-4xl mx-auto px-4 py-12">
-      <div className="flex items-center gap-4 mb-8">
+    <div className="max-w-6xl mx-auto px-4 py-8 h-[calc(100vh-80px)] flex flex-col">
+      <div className="flex items-center gap-4 mb-6 shrink-0">
         <div className="w-12 h-12 bg-sage rounded-2xl flex items-center justify-center text-white shadow-lg shadow-sage/20">
           <Send className="w-6 h-6" />
         </div>
@@ -86,59 +205,150 @@ export default function Messages() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-1">
-          <div className="bg-white p-6 rounded-3xl border border-sage/20 shadow-sm sticky top-24">
-            <h2 className="serif text-xl font-bold text-sage-dark mb-4 text-center">Spiritual Guidance</h2>
-            <div className="space-y-4 text-sm text-ink/60 leading-relaxed">
-              <p>
-                "Therefore encourage one another and build each other up, just as in fact you are doing."
-              </p>
-              <p className="font-bold text-sage">— 1 Thessalonians 5:11</p>
-              <hr className="border-sage/10" />
-              <p>
-                To send a private message to a specific person, visit their profile and look for the <strong>"Send a Word"</strong> button.
-              </p>
-            </div>
+      <div className="flex-grow bg-white rounded-3xl border border-sage/20 shadow-sm overflow-hidden flex flex-col md:flex-row min-h-0">
+        
+        {/* Conversations List */}
+        <div className={`w-full md:w-1/3 border-r border-sage/10 flex flex-col ${activeConversationId ? 'hidden md:flex' : 'flex'}`}>
+          <div className="p-4 border-b border-sage/10 bg-sage/5 shrink-0">
+            <h2 className="font-bold text-sage-dark">Conversations</h2>
+          </div>
+          <div className="overflow-y-auto flex-grow">
+            {conversations.length === 0 ? (
+              <div className="p-8 text-center text-ink/40">
+                <MessageCircle className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                <p>No messages yet.</p>
+                <p className="text-xs mt-2">Visit a user's profile to send them a word.</p>
+              </div>
+            ) : (
+              conversations.map(convo => (
+                <button
+                  key={convo.otherUserId}
+                  onClick={() => setActiveConversationId(convo.otherUserId)}
+                  className={`w-full text-left p-4 border-b border-sage/5 hover:bg-sage/5 transition-colors flex items-center gap-3 ${activeConversationId === convo.otherUserId ? 'bg-sage/10' : ''}`}
+                >
+                  <div className="w-10 h-10 rounded-full bg-sage-light flex items-center justify-center text-sage font-bold shrink-0 overflow-hidden">
+                    {convo.profile?.photoURL ? (
+                      <img src={convo.profile.photoURL} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      (convo.profile?.displayName || 'U')[0].toUpperCase()
+                    )}
+                  </div>
+                  <div className="flex-grow min-w-0">
+                    <div className="flex justify-between items-baseline mb-1">
+                      <span className="font-bold text-sage-dark truncate">{convo.profile?.displayName || 'Unknown User'}</span>
+                      {convo.messages.length > 0 && (
+                        <span className="text-[10px] text-ink/40 shrink-0 ml-2">
+                          {new Date(convo.messages[convo.messages.length - 1].createdAt).toLocaleDateString()}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <p className="text-xs text-ink/60 truncate">
+                        {convo.messages.length > 0 ? convo.messages[convo.messages.length - 1].text : ''}
+                      </p>
+                      {convo.unreadCount > 0 && (
+                        <span className="bg-sage text-white text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ml-2">
+                          {convo.unreadCount}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </button>
+              ))
+            )}
           </div>
         </div>
 
-        <div className="lg:col-span-2">
-          <h2 className="serif text-2xl font-bold text-sage-dark mb-6 flex items-center gap-2">
-            <MessageCircle className="w-6 h-6 text-sage" />
-            Your Private Inbox
-          </h2>
-          <div className="space-y-4">
-            {messages.map((msg) => (
-              <div key={msg.id} className="bg-white p-6 rounded-3xl border border-sage/20 shadow-sm hover:shadow-md transition-all group">
-                <div className="flex gap-4">
-                  <div className="w-12 h-12 rounded-2xl bg-sage/10 flex items-center justify-center shrink-0 text-sage group-hover:bg-sage group-hover:text-white transition-colors">
-                    <UserIcon className="w-6 h-6" />
+        {/* Active Conversation */}
+        <div className={`w-full md:w-2/3 flex flex-col ${!activeConversationId ? 'hidden md:flex' : 'flex'}`}>
+          {activeConvo ? (
+            <>
+              {/* Chat Header */}
+              <div className="p-4 border-b border-sage/10 bg-sage/5 flex items-center gap-3 shrink-0">
+                <button 
+                  onClick={() => setActiveConversationId(null)}
+                  className="md:hidden p-2 -ml-2 text-sage-dark hover:bg-sage/10 rounded-full"
+                >
+                  <ChevronLeft size={20} />
+                </button>
+                <Link to={`/profile/${activeConvo.profile?.username || ''}`} className="flex items-center gap-3 hover:opacity-80">
+                  <div className="w-10 h-10 rounded-full bg-sage-light flex items-center justify-center text-sage font-bold shrink-0 overflow-hidden">
+                    {activeConvo.profile?.photoURL ? (
+                      <img src={activeConvo.profile.photoURL} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      (activeConvo.profile?.displayName || 'U')[0].toUpperCase()
+                    )}
                   </div>
-                  <div className="flex-grow">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-3">
-                      <span className="font-bold text-ink text-lg">
-                        From {msg.from}
-                      </span>
-                      <span className="text-xs font-bold text-sage bg-sage/5 px-3 py-1 rounded-full uppercase tracking-widest">
-                        {new Date(msg.createdAt).toLocaleString()}
-                      </span>
-                    </div>
-                    <p className="text-ink/80 leading-relaxed italic">"{msg.text}"</p>
+                  <div>
+                    <h2 className="font-bold text-sage-dark">{activeConvo.profile?.displayName || 'Unknown User'}</h2>
+                    {activeConvo.profile?.username && <p className="text-xs text-ink/40">@{activeConvo.profile.username}</p>}
                   </div>
-                </div>
+                </Link>
               </div>
-            ))}
-            {messages.length === 0 && (
-              <div className="text-center py-20 bg-white rounded-3xl border border-sage/20 border-dashed">
-                <div className="w-16 h-16 bg-sage/5 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <MessageCircle className="w-8 h-8 text-sage/30" />
-                </div>
-                <h3 className="serif text-xl font-bold text-sage-dark mb-2">Your Inbox is Quiet</h3>
-                <p className="text-ink/40 max-w-xs mx-auto">Wait upon the Lord, for He speaks in the silence. Encouragements from the brethren will appear here.</p>
+
+              {/* Messages Area */}
+              <div className="flex-grow overflow-y-auto p-4 space-y-4 bg-cream/10">
+                {activeConvo.messages.map((msg, idx) => {
+                  const isMe = msg.senderId === user?.id;
+                  const showDate = idx === 0 || new Date(msg.createdAt).toDateString() !== new Date(activeConvo.messages[idx - 1].createdAt).toDateString();
+                  
+                  return (
+                    <React.Fragment key={msg._id || idx}>
+                      {showDate && (
+                        <div className="flex justify-center my-4">
+                          <span className="text-[10px] font-bold text-ink/30 uppercase tracking-widest bg-sage/5 px-3 py-1 rounded-full">
+                            {new Date(msg.createdAt).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                          </span>
+                        </div>
+                      )}
+                      <div className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-[75%] rounded-2xl p-3 ${
+                          isMe 
+                            ? 'bg-sage text-white rounded-tr-sm' 
+                            : 'bg-white border border-sage/20 text-ink/80 rounded-tl-sm'
+                        }`}>
+                          <p className="text-sm whitespace-pre-wrap">{msg.text}</p>
+                          <p className={`text-[10px] mt-1 text-right ${isMe ? 'text-white/70' : 'text-ink/40'}`}>
+                            {new Date(msg.createdAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        </div>
+                      </div>
+                    </React.Fragment>
+                  );
+                })}
+                <div ref={messagesEndRef} />
               </div>
-            )}
-          </div>
+
+              {/* Input Area */}
+              <div className="p-4 border-t border-sage/10 bg-white shrink-0">
+                <form onSubmit={handleSend} className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newMessage}
+                    onChange={(e) => setNewMessage(e.target.value)}
+                    placeholder="Type an encouraging word..."
+                    className="flex-grow p-3 rounded-xl border border-sage/20 bg-cream/30 focus:bg-white focus:ring-2 focus:ring-sage/30 transition-all outline-none"
+                    disabled={isSending}
+                  />
+                  <button
+                    type="submit"
+                    disabled={isSending || !newMessage.trim()}
+                    className="bg-sage text-white p-3 rounded-xl hover:bg-sage-dark transition-colors disabled:opacity-50 flex items-center justify-center shrink-0"
+                  >
+                    <Send size={20} />
+                  </button>
+                </form>
+              </div>
+            </>
+          ) : (
+            <div className="flex-grow flex flex-col items-center justify-center text-ink/40 p-8 text-center">
+              <div className="w-20 h-20 bg-sage/5 rounded-full flex items-center justify-center mb-4">
+                <MessageCircle className="w-10 h-10 text-sage/30" />
+              </div>
+              <h3 className="serif text-2xl font-bold text-sage-dark mb-2">Select a Conversation</h3>
+              <p className="max-w-xs">Choose a conversation from the list or visit a user's profile to start a new one.</p>
+            </div>
+          )}
         </div>
       </div>
     </div>

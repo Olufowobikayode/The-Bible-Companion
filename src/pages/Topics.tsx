@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { fetchBibleVerse } from '../lib/bible';
+import { api } from '../lib/api';
 import { Loader2, Heart, Sparkles, BookOpen, MapPin, Search, BrainCircuit } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { getTopicVerses, getNewsTopic, performSemanticSearch } from '../lib/gemini';
@@ -43,6 +44,16 @@ export default function Topics() {
       
       const results = await Promise.all(result.verses.map((ref: string) => fetchBibleVerse(ref)));
       setVerses(results.filter(r => r !== null));
+
+      // Track activity
+      try {
+        await api.post('/api/user/activity', {
+          type: 'topic_explore',
+          metadata: { topic: selectedTopic.name }
+        });
+      } catch (error) {
+        console.error("Failed to track topic exploration:", error);
+      }
     } catch (error) {
       console.error("Failed to load topic verses:", error);
       toast.error('Failed to load verses for this topic.');

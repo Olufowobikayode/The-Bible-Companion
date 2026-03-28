@@ -108,7 +108,7 @@ export default function ThreadList() {
       const newThread = await api.post(`/api/forums/${forumId}/threads`, {
         title: newThreadTitle,
         authorUid: user.id,
-        authorName: user.user_metadata?.full_name || 'Anonymous',
+        authorName: user.user_metadata?.full_name || user.email?.split('@')[0] || 'User',
         isAnonymous,
       });
       setThreads(prev => [newThread, ...prev]);
@@ -169,7 +169,7 @@ export default function ThreadList() {
       )}
 
       <div className="grid gap-4 px-4 sm:px-0">
-        {threads.map(thread => (
+        {threads.filter(thread => thread.id).map(thread => (
           <motion.div 
             key={thread.id} 
             initial={{ opacity: 0, y: 10 }}
@@ -179,7 +179,7 @@ export default function ThreadList() {
             <Link to={`/forum/${forumId}/threads/${thread.id}`} className="block p-6 sm:p-8 bg-white border border-sage/10 rounded-3xl hover:border-sage/30 hover:shadow-xl hover:shadow-sage/5 transition-all">
               <h2 className="serif text-xl sm:text-2xl font-semibold text-sage-dark mb-2 group-hover:text-sage transition-colors">{thread.title}</h2>
               <p className="text-xs text-ink/40 italic">
-                Posted by {thread.isAnonymous ? 'Anonymous' : (thread.authorName || 'Unknown')}
+                Posted by {thread.isAnonymous ? 'Anonymous' : (thread.authorName || 'User')}
               </p>
             </Link>
             {(isAdmin || (user && user.id === thread.authorUid)) && (

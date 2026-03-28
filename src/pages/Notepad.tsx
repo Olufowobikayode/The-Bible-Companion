@@ -2,11 +2,12 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { supabase } from '../lib/supabase';
 import { api } from '../lib/api';
-import { PenLine, Trash2, Sparkles, Save, Plus, ChevronRight, Loader2, BookOpen, Share2 } from 'lucide-react';
+import { PenLine, Trash2, Sparkles, Save, Plus, ChevronRight, Loader2, BookOpen, Share2, MessageCircle } from 'lucide-react';
 import { analyzeNote } from '../lib/gemini';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { moderateContent } from '../lib/moderation';
+import NoteChat from '../components/notepad/NoteChat';
 
 interface Note {
   id: string;
@@ -456,6 +457,9 @@ export default function Notepad() {
                     </div>
                   </motion.div>
                 )}
+
+                {/* Chat with Notes */}
+                <NoteChat notes={[selectedNote]} />
               </motion.div>
             )}
           </AnimatePresence>
