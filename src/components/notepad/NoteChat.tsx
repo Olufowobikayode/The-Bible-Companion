@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Send, Sparkles, Loader2, Bot, User } from 'lucide-react';
+import { Send, Sparkles, Loader2, Bot, User, Trash2 } from 'lucide-react';
 import { chatWithNotesStream } from '../../lib/gemini';
 import ReactMarkdown from 'react-markdown';
 
@@ -25,12 +25,14 @@ export default function NoteChat({ notes }: NoteChatProps) {
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior, block: 'end' });
+    }
   };
 
   useEffect(() => {
-    scrollToBottom();
+    scrollToBottom(isTyping ? 'auto' : 'smooth');
   }, [messages, isTyping]);
 
   const handleSend = async () => {
@@ -73,14 +75,20 @@ export default function NoteChat({ notes }: NoteChatProps) {
     }
   };
 
+  const handleDeleteMessage = (id: string) => {
+    if (window.confirm("Delete this message?")) {
+      setMessages(prev => prev.filter(msg => msg.id !== id));
+    }
+  };
+
   return (
-    <div className="bg-white rounded-[2.5rem] border border-sage/10 p-6 sm:p-10 shadow-sm flex flex-col h-[600px]">
+    <div className="bg-white rounded-[2.5rem] border border-sage/10 p-6 sm:p-10 shadow-sm flex flex-col h-[600px] min-h-0">
       <div className="flex items-center gap-3 mb-6 shrink-0">
         <Sparkles className="text-sage w-5 h-5" />
         <h3 className="serif text-xl font-bold text-sage-dark">Theological Dialogue</h3>
       </div>
       
-      <div className="flex-1 overflow-y-auto mb-6 pr-2 space-y-6 custom-scrollbar">
+      <div className="flex-1 overflow-y-auto mb-6 pr-2 space-y-6 custom-scrollbar overscroll-contain min-h-0 scroll-smooth">
         {messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center px-4">
             <div className="w-16 h-16 bg-sage-light/30 rounded-full flex items-center justify-center mb-4">
@@ -96,18 +104,25 @@ export default function NoteChat({ notes }: NoteChatProps) {
               key={msg.id}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              className={`flex gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}
+              className={`flex gap-4 group ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}
             >
               <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
                 msg.role === 'user' ? 'bg-sage text-white' : 'bg-sage-light text-sage-dark'
               }`}>
                 {msg.role === 'user' ? <User size={16} /> : <Bot size={16} />}
               </div>
-              <div className={`max-w-[80%] rounded-2xl p-4 ${
+              <div className={`max-w-[80%] rounded-2xl p-4 relative ${
                 msg.role === 'user' 
                   ? 'bg-sage text-white rounded-tr-none' 
                   : 'bg-sage-light/20 border border-sage/10 rounded-tl-none text-ink/80'
               }`}>
+                <button 
+                  onClick={() => handleDeleteMessage(msg.id)}
+                  className={`absolute -top-2 ${msg.role === 'user' ? '-left-2' : '-right-2'} p-1.5 bg-white border border-sage/10 rounded-full text-ink/20 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all shadow-sm z-10`}
+                  title="Delete message"
+                >
+                  <Trash2 size={12} />
+                </button>
                 {msg.role === 'user' ? (
                   <p className="whitespace-pre-wrap">{msg.content}</p>
                 ) : (
@@ -135,7 +150,7 @@ export default function NoteChat({ notes }: NoteChatProps) {
             </div>
           </motion.div>
         )}
-        <div ref={messagesEndRef} />
+        <div ref={messagesEndRef} className="h-px w-full shrink-0 overflow-anchor-none" />
       </div>
 
       <div className="shrink-0 relative">

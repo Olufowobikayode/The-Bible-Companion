@@ -5,6 +5,8 @@ import { fileURLToPath } from "url";
 import { MongoClient, ObjectId } from "mongodb";
 import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
+import axios from "axios";
+import xml2js from "xml2js";
 
 dotenv.config();
 
@@ -62,6 +64,15 @@ async function startServer() {
     next();
   };
 
+  app.get("/api/admin/check", authenticate, async (req: any, res) => {
+    const isAdmin = req.user.email === 'kayodeolufowobi709@gmail.com';
+    res.json({ isAdmin });
+  });
+
+  app.get("/api/health", (req, res) => {
+    res.json({ status: "ok", dbConnected: !!db, timestamp: new Date() });
+  });
+
   // User Profiles
   app.get("/api/users/me", authenticate, async (req: any, res) => {
     if (!db) return res.status(500).json({ error: "DB not connected" });
@@ -83,9 +94,26 @@ async function startServer() {
     // Delete user followers/following
     await db.collection("followers").deleteMany({ $or: [{ followerId: userId }, { targetId: userId }] });
     // Delete user posts, prayers, etc.
-    await db.collection("forum_posts").deleteMany({ authorId: userId });
-    await db.collection("prayer_requests").deleteMany({ userId: userId });
-    await db.collection("testimonies").deleteMany({ userId: userId });
+    await db.collection("forum_posts").deleteMany({ authorUid: userId });
+    await db.collection("prayer_requests").deleteMany({ authorUid: userId });
+    await db.collection("testimonies").deleteMany({ authorUid: userId });
+    await db.collection("threads").deleteMany({ authorUid: userId });
+    await db.collection("typed_prayers").deleteMany({ authorUid: userId });
+    await db.collection("testimony_comments").deleteMany({ authorUid: userId });
+    await db.collection("forum_messages").deleteMany({ senderId: userId });
+    await db.collection("direct_messages").deleteMany({ $or: [{ senderId: userId }, { recipientId: userId }] });
+    await db.collection("friend_requests").deleteMany({ $or: [{ senderId: userId }, { recipientId: userId }] });
+    await db.collection("notes").deleteMany({ userId });
+    await db.collection("bookmarks").deleteMany({ userId });
+    await db.collection("reading_plans").deleteMany({ userId });
+    await db.collection("study_journeys").deleteMany({ userId });
+    await db.collection("custom_concordance").deleteMany({ userId });
+    await db.collection("user_activity").deleteMany({ userId });
+    await db.collection("user_stats").deleteMany({ userId });
+    await db.collection("notifications").deleteMany({ userId });
+    await db.collection("milestones").deleteMany({ userId });
+    await db.collection("testimony_reactions").deleteMany({ userId });
+    await db.collection("user_prayers").deleteMany({ uid: userId });
     
     // Delete from supabase auth
     await supabaseAdmin.auth.admin.deleteUser(userId);
@@ -105,14 +133,17 @@ async function startServer() {
     const { q } = req.query;
     if (!q) return res.json([]);
     const users = await db.collection("user_profiles").find({
-      username: { $regex: q, $options: "i" }
+      $or: [
+        { username: { $regex: q, $options: "i" } },
+        { displayName: { $regex: q, $options: "i" } }
+      ]
     }).limit(10).toArray();
     res.json(users);
   });
 
-  app.get("/api/users/brethren", authenticate, async (req: any, res) => {
+  app.get("/api/users/:uid/brethren", async (req, res) => {
     if (!db) return res.status(500).json({ error: "DB not connected" });
-    const userId = req.user.id;
+    const userId = req.params.uid;
     
     // Find people I follow
     const following = await db.collection("followers").find({ followerId: userId }).toArray();
@@ -126,7 +157,13 @@ async function startServer() {
     const brethrenIds = followingIds.filter(id => followerIds.includes(id));
     
     const brethren = await db.collection("user_profiles").find({ uid: { $in: brethrenIds } }).toArray();
-    res.json(brethren);
+    res.json(brethren.map((u: any) => ({
+      uid: u.uid,
+      username: u.username,
+      displayName: u.displayName,
+      photoURL: u.photoURL,
+      bio: u.bio
+    })));
   });
 
   app.get("/api/users/by-username/:username", async (req, res) => {
@@ -372,6 +409,25 @@ async function startServer() {
     res.json({ ...newPrayer, id: result.insertedId.toString() });
   });
 
+  app.delete("/api/prayer-requests/:id/typed-prayers/:prayerId", authenticate, async (req: any, res) => {
+    if (!db) return res.status(500).json({ error: "DB not connected" });
+    try {
+      const prayer = await db.collection("typed_prayers").findOne({ _id: new ObjectId(req.params.prayerId) });
+      if (!prayer) return res.status(404).json({ error: "Prayer not found" });
+      
+      // Check if user is author or admin
+      const isAdmin = req.user.email === 'kayodeolufowobi709@gmail.com';
+      if (prayer.authorUid !== req.user.id && !isAdmin) {
+        return res.status(403).json({ error: "Unauthorized" });
+      }
+
+      await db.collection("typed_prayers").deleteOne({ _id: new ObjectId(req.params.prayerId) });
+      res.json({ success: true });
+    } catch (error) {
+      res.status(400).json({ error: "Invalid prayer ID" });
+    }
+  });
+
   // Testimonies
   app.get("/api/testimonies", async (req, res) => {
     if (!db) return res.status(500).json({ error: "DB not connected" });
@@ -488,6 +544,24 @@ async function startServer() {
     }
   });
 
+  app.delete("/api/testimonies/:id/comments/:commentId", authenticate, async (req: any, res) => {
+    if (!db) return res.status(500).json({ error: "DB not connected" });
+    try {
+      const comment = await db.collection("testimony_comments").findOne({ _id: new ObjectId(req.params.commentId) });
+      if (!comment) return res.status(404).json({ error: "Comment not found" });
+
+      const isAdmin = req.user.email === 'kayodeolufowobi709@gmail.com';
+      if (comment.authorUid !== req.user.id && !isAdmin) {
+        return res.status(403).json({ error: "Unauthorized" });
+      }
+
+      await db.collection("testimony_comments").deleteOne({ _id: new ObjectId(req.params.commentId) });
+      res.json({ success: true });
+    } catch (error) {
+      res.status(400).json({ error: "Invalid comment ID" });
+    }
+  });
+
   app.delete("/api/testimonies/:id", authenticate, async (req: any, res) => {
     if (!db) return res.status(500).json({ error: "DB not connected" });
     try {
@@ -517,6 +591,57 @@ async function startServer() {
     if (!db) return res.status(500).json({ error: "DB not connected" });
     await db.collection("forums").deleteOne({ _id: new ObjectId(req.params.id) });
     res.json({ success: true });
+  });
+
+  // Prayer Rooms
+  app.get("/api/prayer-rooms", async (req, res) => {
+    if (!db) return res.status(500).json({ error: "DB not connected" });
+    
+    // Auto-delete expired rooms
+    const now = new Date();
+    await db.collection("prayer_rooms").deleteMany({
+      expiryDate: { $exists: true, $lt: now.toISOString() }
+    });
+
+    const rooms = await db.collection("prayer_rooms").find().toArray();
+    res.json(rooms.map((r: any) => ({ ...r, id: r._id.toString() })));
+  });
+
+  app.post("/api/prayer-rooms", authenticate, async (req: any, res) => {
+    if (!db) return res.status(500).json({ error: "DB not connected" });
+    const { name, description, startDate, expiryDate } = req.body;
+    const room = { 
+        name, 
+        description, 
+        startDate, 
+        expiryDate, 
+        createdBy: req.user.id, 
+        creatorName: req.user.user_metadata?.full_name || req.user.email?.split('@')[0] || 'User',
+        createdAt: new Date(),
+        participantCount: 0 
+    };
+    const result = await db.collection("prayer_rooms").insertOne(room);
+    res.json({ ...room, id: result.insertedId.toString() });
+  });
+
+  app.delete("/api/prayer-rooms/:id", authenticate, async (req: any, res) => {
+    if (!db) return res.status(500).json({ error: "DB not connected" });
+    const roomId = req.params.id;
+    
+    try {
+      const room = await db.collection("prayer_rooms").findOne({ _id: new ObjectId(roomId) });
+      if (!room) return res.status(404).json({ error: "Room not found" });
+
+      const isAdmin = req.user.email === 'kayodeolufowobi709@gmail.com';
+      if (room.createdBy !== req.user.id && !isAdmin) {
+        return res.status(403).json({ error: "Unauthorized" });
+      }
+
+      await db.collection("prayer_rooms").deleteOne({ _id: new ObjectId(roomId) });
+      res.json({ success: true });
+    } catch (error) {
+      res.status(400).json({ error: "Invalid ID format" });
+    }
   });
 
   app.get("/api/forums/:forumId/threads", async (req, res) => {
@@ -817,6 +942,37 @@ async function startServer() {
     res.json({ ...message, id: result.insertedId });
   });
 
+  app.delete("/api/messages/:id", authenticate, async (req: any, res) => {
+    if (!db) return res.status(500).json({ error: "DB not connected" });
+    try {
+      const message = await db.collection("messages").findOne({ _id: new ObjectId(req.params.id) });
+      if (!message) return res.status(404).json({ error: "Message not found" });
+      
+      if (message.senderId !== req.user.id && message.recipientId !== req.user.id && req.user.email !== 'kayodeolufowobi709@gmail.com') {
+        return res.status(403).json({ error: "Unauthorized" });
+      }
+
+      await db.collection("messages").deleteOne({ _id: new ObjectId(req.params.id) });
+      res.json({ success: true });
+    } catch (error) {
+      res.status(400).json({ error: "Invalid ID format" });
+    }
+  });
+
+  app.put("/api/messages/read/:senderId", authenticate, async (req: any, res) => {
+    if (!db) return res.status(500).json({ error: "DB not connected" });
+    const { senderId } = req.params;
+    try {
+      await db.collection("messages").updateMany(
+        { senderId, recipientId: req.user.id, read: false },
+        { $set: { read: true } }
+      );
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to mark messages as read" });
+    }
+  });
+
   // Reading Plans
   app.get("/api/reading-plans", authenticate, async (req: any, res) => {
     if (!db) return res.status(500).json({ error: "DB not connected" });
@@ -844,15 +1000,37 @@ async function startServer() {
 
   // Prayer Rooms
   app.get("/api/prayer-rooms", async (req, res) => {
-    if (!db) return res.status(500).json({ error: "DB not connected" });
-    const rooms = await db.collection("prayer_rooms").find().toArray();
-    res.json(rooms.map((r: any) => ({ ...r, id: r._id.toString() })));
+    try {
+      if (!db) return res.status(500).json({ error: "DB not connected" });
+      const now = new Date();
+      const rooms = await db.collection("prayer_rooms").find({
+        $or: [
+          { expiryDate: { $exists: false } },
+          { expiryDate: null },
+          { expiryDate: { $gt: now.toISOString() } }
+        ]
+      }).toArray();
+      res.json(rooms.map((r: any) => ({ ...r, id: r._id.toString() })));
+    } catch (error) {
+      console.error("Error fetching prayer rooms:", error);
+      res.status(500).json({ error: "Internal server error while fetching rooms" });
+    }
   });
 
   app.post("/api/prayer-rooms", authenticate, async (req: any, res) => {
     if (!db) return res.status(500).json({ error: "DB not connected" });
     const inviteCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-    const room = { ...req.body, inviteCode, createdBy: req.user.id, createdAt: new Date() };
+    const { name, description, creatorName, startDate, expiryDate } = req.body;
+    const room = { 
+      name, 
+      description, 
+      creatorName, 
+      startDate: startDate || null, 
+      expiryDate: expiryDate || null,
+      inviteCode, 
+      createdBy: req.user.id, 
+      createdAt: new Date() 
+    };
     const result = await db.collection("prayer_rooms").insertOne(room);
     res.json({ ...room, id: result.insertedId.toString() });
   });
@@ -989,7 +1167,7 @@ async function startServer() {
       const searchRegex = new RegExp(q, 'i');
 
       // Search Users
-      const users = await db.collection("users").find({
+      const users = await db.collection("user_profiles").find({
         $or: [
           { username: searchRegex },
           { full_name: searchRegex }
@@ -1169,8 +1347,13 @@ async function startServer() {
   // Notifications
   app.get("/api/notifications", authenticate, async (req: any, res) => {
     if (!db) return res.status(500).json({ error: "DB not connected" });
-    const notifications = await db.collection("notifications").find({ userId: req.user.id }).sort({ createdAt: -1 }).toArray();
-    res.json(notifications.map((n: any) => ({ ...n, id: n._id.toString() })));
+    try {
+      const notifications = await db.collection("notifications").find({ userId: req.user.id }).sort({ createdAt: -1 }).toArray();
+      res.json(notifications.map((n: any) => ({ ...n, id: n._id.toString() })));
+    } catch (error) {
+      console.error("Error fetching notifications:", error);
+      res.status(500).json({ error: "Failed to fetch notifications" });
+    }
   });
 
   app.post("/api/notifications/:id/read", authenticate, async (req: any, res) => {
@@ -1184,77 +1367,6 @@ async function startServer() {
     } catch (error) {
       res.status(400).json({ error: "Invalid ID format" });
     }
-  });
-
-  // Worship Sanctuary Synchronized State
-  app.get("/api/worship/current", (req, res) => {
-    const WORSHIP_PLAYLIST = [
-      { id: 'PUtll3mNj5U', title: 'Way Maker', artist: 'Leeland', duration: 500 },
-      { id: 'Z8-z_37881A', title: 'Goodness of God', artist: 'Bethel Music', duration: 300 },
-      { id: 'XtwIT8JjddM', title: '10,000 Reasons (Bless the Lord)', artist: 'Matt Redman', duration: 340 },
-      { id: 'nQWFzMvCfLE', title: 'What a Beautiful Name', artist: 'Hillsong Worship', duration: 340 },
-      { id: 'C9_7XmN_YpY', title: 'Gratitude', artist: 'Brandon Lake', duration: 360 },
-      { id: 'y81yIo1_3o8', title: 'How Great Is Our God', artist: 'Chris Tomlin', duration: 280 },
-      { id: 'XTWf76_0S_o', title: 'In Christ Alone', artist: 'Getty/Townend', duration: 320 },
-      { id: 'WjZ01760f5g', title: 'Amazing Grace (My Chains Are Gone)', artist: 'Chris Tomlin', duration: 260 },
-      { id: 'qYvG04n_adA', title: 'Cornerstone', artist: 'Hillsong Worship', duration: 300 },
-      { id: 'FgnM4L1yN_4', title: 'Oceans (Where Feet May Fail)', artist: 'Hillsong UNITED', duration: 540 },
-      { id: '0b_ynnc4-6M', title: 'Build My Life', artist: 'Housefires', duration: 480 },
-      { id: 'LWP-9U65a-A', title: 'The Blessing', artist: 'Kari Jobe', duration: 720 },
-      { id: 's6ZhQf_7s5s', title: 'Holy Forever', artist: 'Chris Tomlin', duration: 300 },
-      { id: 'p7Jll7AFAZ8', title: 'I Speak Jesus', artist: 'Charity Gayle', duration: 330 },
-      { id: '0C45-y_36E8', title: 'Firm Foundation (He Won\'t)', artist: 'Cody Carnes', duration: 360 },
-      { id: '809XnTHbs2A', title: 'Graves Into Gardens', artist: 'Elevation Worship', duration: 450 },
-      { id: '6xx0d3R2LoU', title: 'Reckless Love', artist: 'Cory Asbury', duration: 330 },
-      { id: 'h78X812_888', title: 'Living Hope', artist: 'Phil Wickham', duration: 310 },
-      { id: 'v0u70s88888', title: 'King of Kings', artist: 'Hillsong Worship', duration: 290 },
-      { id: 'h8888888888', title: 'Great Are You Lord', artist: 'All Sons & Daughters', duration: 300 },
-      { id: '7_8_8_8_8', title: 'Promises', artist: 'Maverick City Music', duration: 600 },
-      { id: '8_8_8_8_8', title: 'Jireh', artist: 'Elevation Worship & Maverick City Music', duration: 600 },
-      { id: '9_8_8_8_8', title: 'Same God', artist: 'Elevation Worship', duration: 500 },
-      { id: '0_8_8_8_8', title: 'I Believe', artist: 'Phil Wickham', duration: 300 },
-      { id: '1_8_8_8_8', title: 'Trust In God', artist: 'Elevation Worship', duration: 450 },
-      { id: '2_8_8_8_8', title: 'Praise', artist: 'Elevation Worship', duration: 300 },
-      { id: '3_8_8_8_8', title: 'Worthy of It All', artist: 'CeCe Winans', duration: 400 },
-      { id: '4_8_8_8_8', title: 'Good Good Father', artist: 'Chris Tomlin', duration: 300 },
-      { id: '5_8_8_8_8', title: 'No Longer Slaves', artist: 'Bethel Music', duration: 360 },
-      { id: '6_8_8_8_8', title: 'O Come to the Altar', artist: 'Elevation Worship', duration: 350 },
-    ];
-
-    // Seeded Shuffle Algorithm
-    const seedShuffle = (array: any[], seed: number) => {
-      const shuffled = [...array];
-      for (let i = shuffled.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.abs(Math.sin(seed + i)) * (i + 1));
-        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-      }
-      return shuffled;
-    };
-
-    const totalDuration = WORSHIP_PLAYLIST.reduce((acc, song) => acc + song.duration, 0);
-    const now = Math.floor(Date.now() / 1000);
-    const epoch = 1700000000;
-    const elapsedSinceEpoch = now - epoch;
-    
-    const cycleIndex = Math.floor(elapsedSinceEpoch / totalDuration);
-    const timeInCycle = elapsedSinceEpoch % totalDuration;
-    
-    // Use cycleIndex as seed to get a different shuffle every cycle
-    const currentPlaylist = seedShuffle(WORSHIP_PLAYLIST, cycleIndex);
-    
-    let currentOffset = 0;
-    for (const song of currentPlaylist) {
-      if (timeInCycle < currentOffset + song.duration) {
-        return res.json({
-          song,
-          startTime: timeInCycle - currentOffset,
-          cycle: cycleIndex
-        });
-      }
-      currentOffset += song.duration;
-    }
-    
-    res.json({ song: currentPlaylist[0], startTime: 0, cycle: cycleIndex });
   });
 
   // Forum Messages
@@ -1298,6 +1410,24 @@ app.post("/api/forum/messages", authenticate, async (req: any, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: "Failed to send forum message" });
+  }
+});
+
+app.delete("/api/forum/messages/:id", authenticate, async (req: any, res) => {
+  if (!db) return res.status(500).json({ error: "DB not connected" });
+  try {
+    const message = await db.collection("forum_messages").findOne({ _id: new ObjectId(req.params.id) });
+    if (!message) return res.status(404).json({ error: "Message not found" });
+
+    const isAdmin = req.user.email === 'kayodeolufowobi709@gmail.com';
+    if (message.senderId !== req.user.id && !isAdmin) {
+      return res.status(403).json({ error: "Unauthorized" });
+    }
+
+    await db.collection("forum_messages").deleteOne({ _id: new ObjectId(req.params.id) });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(400).json({ error: "Invalid message ID" });
   }
 });
 

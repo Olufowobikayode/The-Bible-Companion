@@ -37,6 +37,27 @@ export default function PrayerWall() {
   const [isTypingSubmitting, setIsTypingSubmitting] = useState(false);
   const [viewingPrayersId, setViewingPrayersId] = useState<string | null>(null);
   const [typedPrayersList, setTypedPrayersList] = useState<any[]>([]);
+
+  const handleDeleteTypedPrayer = async (requestId: string, prayerId: string) => {
+    try {
+      const response = await fetch(`/api/prayer-requests/${requestId}/typed-prayers/${prayerId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
+        }
+      });
+      if (response.ok) {
+        setTypedPrayersList(prev => prev.filter(p => p.id !== prayerId));
+        toast.success('Prayer deleted successfully');
+      } else {
+        toast.error('Failed to delete prayer');
+      }
+    } catch (error) {
+      console.error('Error deleting prayer:', error);
+      toast.error('Error deleting prayer');
+    }
+  };
+
   const [user, setUser] = useState<any>(null);
   const [isGeneratingPrayer, setIsGeneratingPrayer] = useState(false);
 
@@ -459,12 +480,21 @@ export default function PrayerWall() {
             </div>
             <div className="flex-1 overflow-y-auto space-y-4 pr-2">
               {typedPrayersList.length > 0 ? typedPrayersList.map(p => (
-                <div key={p.id} className="p-4 bg-cream/30 rounded-2xl border border-sage/10">
+                <div key={p.id} className="p-4 bg-cream/30 rounded-2xl border border-sage/10 relative group">
                   <p className="text-ink/80 mb-2 italic">"{p.text}"</p>
                   <div className="flex justify-between items-center text-[10px] text-ink/40">
                     <span>— {p.authorName}</span>
                     <span>{new Date(p.createdAt).toLocaleDateString()}</span>
                   </div>
+                  {(user?.id === p.authorUid || user?.email === 'kayodeolufowobi709@gmail.com') && (
+                    <button
+                      onClick={() => handleDeleteTypedPrayer(viewingPrayersId!, p.id)}
+                      className="absolute top-2 right-2 p-1 text-destructive/40 hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                      title="Delete prayer"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  )}
                 </div>
               )) : (
                 <p className="text-center text-ink/40 italic py-8">No typed prayers yet.</p>

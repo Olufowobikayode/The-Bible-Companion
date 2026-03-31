@@ -20,10 +20,19 @@ interface LayoutProps {
 }
 
 export default function Layout({ children }: LayoutProps) {
+  const location = useLocation();
   const { user, loading: isAuthLoading } = useAuth();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const location = useLocation();
+  const normalizedPath = location.pathname.replace(/\/$/, '') || '/';
+  const isChatPage = normalizedPath === '/chat';
+  const isPrayerRoomsPage = normalizedPath === '/prayer-rooms';
+  const isSpecificPrayerRoomPage = normalizedPath.startsWith('/prayer-rooms/') && normalizedPath.length > '/prayer-rooms/'.length;
+  const isForumPage = normalizedPath.startsWith('/forum');
+  const isNotificationsPage = normalizedPath === '/notifications';
+  const isSpecificMessagePage = normalizedPath.startsWith('/messages/') && normalizedPath.length > '/messages/'.length;
+
+  const shouldHideMenu = isChatPage || isNotificationsPage || isSpecificMessagePage || isSpecificPrayerRoomPage;
 
   const [isFirebaseOffline, setIsFirebaseOffline] = useState(false);
   const [isGeminiMissing, setIsGeminiMissing] = useState(false);
@@ -84,7 +93,7 @@ export default function Layout({ children }: LayoutProps) {
       items: [
         { name: 'Community Tabernacle', path: '/forum', icon: MessageSquare },
         { name: 'Cloud of Witnesses', path: '/testimonies', icon: Heart },
-        { name: 'Prayer Groups', path: '/community', icon: UserIcon },
+        { name: 'Connections', path: '/friends', icon: UserIcon },
         { name: 'Messages', path: '/messages', icon: Send },
         { name: 'My Bookmarks', path: '/bookmarks', icon: Bookmark },
         { name: 'My Profile', path: '/profile', icon: UserIcon },
@@ -142,97 +151,98 @@ export default function Layout({ children }: LayoutProps) {
       )}
       <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
       
-      <header className="sticky top-0 z-50 bg-cream/80 backdrop-blur-xl border-b border-sage/10 shadow-sm safe-top transition-all duration-500">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-20 md:h-24">
-            <Link to="/" className="flex items-center space-x-3 group">
-              <span className="serif text-2xl md:text-3xl font-bold text-sage-dark tracking-[0.15em]">VISION</span>
-            </Link>
+      {!shouldHideMenu && (
+        <header className="sticky top-0 z-50 bg-cream/80 backdrop-blur-xl border-b border-sage/10 shadow-sm safe-top transition-all duration-500">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex justify-between items-center h-20 md:h-24">
+              <Link to="/" className="flex items-center space-x-3 group">
+                <span className="serif text-2xl md:text-3xl font-bold text-sage-dark tracking-[0.15em]">VISION</span>
+              </Link>
 
-            <div className="hidden lg:block flex-1 max-w-md mx-8">
-              <GlobalSearch />
-            </div>
+              <div className="hidden lg:block flex-1 max-w-md mx-8">
+                <GlobalSearch />
+              </div>
 
-            {/* Desktop Nav */}
-            <nav className="hidden md:flex items-center space-x-2">
-              {navItems.slice(0, 6).map((item) => (
-                <Link
-                  key={item.path}
-                  to={item.path}
-                  className={cn(
-                    "px-5 py-2.5 rounded-[2rem] text-sm font-medium transition-all duration-300",
-                    location.pathname === item.path ? "text-sage-dark bg-sage/10 shadow-sm" : "text-ink/60 hover:text-sage-dark hover:bg-sage/5"
-                  )}
-                >
-                  {item.name}
-                </Link>
-              ))}
-              <div className="w-px h-6 bg-sage/20 mx-4" />
-              {user ? (
-                <div className="flex items-center space-x-4 pl-2">
-                  <NotificationCenter />
-                  <Link to="/profile" className="flex items-center space-x-3 hover:opacity-80 transition-opacity">
-                    <div className="flex flex-col items-end">
-                      <span className="text-sm font-medium text-ink/80 leading-none">{user.user_metadata?.full_name || user.email}</span>
-                    </div>
-                    {user.user_metadata?.avatar_url ? (
-                      <img src={user.user_metadata.avatar_url} alt="" className="w-10 h-10 rounded-full border border-sage/20 shadow-sm object-cover" />
-                    ) : (
-                      <div className="w-10 h-10 rounded-full bg-sage-light flex items-center justify-center text-sage font-bold border border-sage/20 shadow-sm">
-                        {(user.user_metadata?.full_name || user.email || 'U')[0].toUpperCase()}
-                      </div>
+              {/* Desktop Nav */}
+              <nav className="hidden md:flex items-center space-x-2">
+                {navItems.slice(0, 6).map((item) => (
+                  <Link
+                    key={item.path}
+                    to={item.path}
+                    className={cn(
+                      "px-5 py-2.5 rounded-[2rem] text-sm font-medium transition-all duration-300",
+                      location.pathname === item.path ? "text-sage-dark bg-sage/10 shadow-sm" : "text-ink/60 hover:text-sage-dark hover:bg-sage/5"
                     )}
-                  </Link>
-                  <button 
-                    onClick={handleLogout} 
-                    className="p-2.5 text-ink/40 hover:text-sage-dark transition-colors hover:bg-sage/10 rounded-full"
-                    title="Sign Out"
                   >
-                    <LogOut size={18} />
-                  </button>
-                </div>
-              ) : (
-                <button
-                  onClick={() => setIsAuthModalOpen(true)}
-                  className="bg-sage text-white px-8 py-3 rounded-[2rem] text-sm font-medium hover:bg-sage-dark transition-all shadow-md shadow-sage/10 active:scale-95"
-                >
-                  Sign In
-                </button>
-              )}
-            </nav>
-
-            {/* Mobile Menu Toggle */}
-            <div className="md:hidden flex items-center space-x-3">
-              {user && <NotificationCenter />}
-              {user ? (
-                <button 
-                  onClick={() => setIsMenuOpen(true)}
-                  className="flex items-center space-x-2 p-1.5 pr-3 bg-white rounded-[2rem] border border-sage/10 shadow-sm active:scale-95 transition-transform"
-                >
-                  <img src={user.user_metadata?.avatar_url || null} alt="" className="w-8 h-8 rounded-full border border-sage/10" />
-                  <Menu size={18} className="text-sage-dark" />
-                </button>
-              ) : (
-                <div className="flex items-center space-x-2">
+                    {item.name}
+                  </Link>
+                ))}
+                <div className="w-px h-6 bg-sage/20 mx-4" />
+                {user ? (
+                  <div className="flex items-center space-x-4 pl-2">
+                    <NotificationCenter />
+                    <Link to="/profile" className="flex items-center space-x-3 hover:opacity-80 transition-opacity">
+                      <div className="flex flex-col items-end">
+                        <span className="text-sm font-medium text-ink/80 leading-none">{user.user_metadata?.full_name || user.email}</span>
+                      </div>
+                      {user.user_metadata?.avatar_url ? (
+                        <img src={user.user_metadata.avatar_url} alt="" className="w-10 h-10 rounded-full border border-sage/20 shadow-sm object-cover" />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-sage-light flex items-center justify-center text-sage font-bold border border-sage/20 shadow-sm">
+                          {(user.user_metadata?.full_name || user.email || 'U')[0].toUpperCase()}
+                        </div>
+                      )}
+                    </Link>
+                    <button 
+                      onClick={handleLogout} 
+                      className="p-2.5 text-ink/40 hover:text-sage-dark transition-colors hover:bg-sage/10 rounded-full"
+                      title="Sign Out"
+                    >
+                      <LogOut size={18} />
+                    </button>
+                  </div>
+                ) : (
                   <button
                     onClick={() => setIsAuthModalOpen(true)}
-                    className="text-xs font-medium text-sage-dark uppercase tracking-widest px-3 py-2"
+                    className="bg-sage text-white px-8 py-3 rounded-[2rem] text-sm font-medium hover:bg-sage-dark transition-all shadow-md shadow-sage/10 active:scale-95"
                   >
                     Sign In
                   </button>
+                )}
+              </nav>
+
+              {/* Mobile Menu Toggle */}
+              <div className="md:hidden flex items-center space-x-3">
+                {user && <NotificationCenter />}
+                {user ? (
                   <button 
-                    className="bg-white p-2.5 rounded-full text-sage-dark border border-sage/10 shadow-sm active:scale-95 transition-transform" 
-                    onClick={() => setIsMenuOpen(!isMenuOpen)}
+                    onClick={() => setIsMenuOpen(true)}
+                    className="flex items-center space-x-2 p-1.5 pr-3 bg-white rounded-[2rem] border border-sage/10 shadow-sm active:scale-95 transition-transform"
                   >
-                    <Menu size={20} />
+                    <img src={user.user_metadata?.avatar_url || null} alt="" className="w-8 h-8 rounded-full border border-sage/10" />
+                    <Menu size={18} className="text-sage-dark" />
                   </button>
-                </div>
-              )}
+                ) : (
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => setIsAuthModalOpen(true)}
+                      className="text-xs font-medium text-sage-dark uppercase tracking-widest px-3 py-2"
+                    >
+                      Sign In
+                    </button>
+                    <button 
+                      className="bg-white p-2.5 rounded-full text-sage-dark border border-sage/10 shadow-sm active:scale-95 transition-transform" 
+                      onClick={() => setIsMenuOpen(!isMenuOpen)}
+                    >
+                      <Menu size={20} />
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-
-      </header>
+        </header>
+      )}
 
       {/* Mobile Nav Overlay */}
       <AnimatePresence>
@@ -336,7 +346,7 @@ export default function Layout({ children }: LayoutProps) {
         )}
       </AnimatePresence>
 
-      <main className="flex-grow pb-24 md:pb-0">
+      <main className={cn("flex-grow", !shouldHideMenu && "pb-24 md:pb-0")}>
         <AnimatePresence mode="wait">
           <motion.div
             key={location.pathname}
@@ -344,6 +354,7 @@ export default function Layout({ children }: LayoutProps) {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
             transition={{ duration: 0.5, ease: "easeOut" }}
+            className="h-full"
           >
             {children}
           </motion.div>
@@ -351,28 +362,30 @@ export default function Layout({ children }: LayoutProps) {
       </main>
 
       {/* Mobile Bottom Nav */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-cream/90 backdrop-blur-xl border-t border-sage/10 z-50 safe-bottom">
-        <div className="flex justify-around items-center h-20 px-2">
-          {bottomNavItems.map((item) => (
-            <Link
-              key={item.path}
-              to={item.path}
-              className={cn(
-                "flex flex-col items-center justify-center space-y-1.5 flex-1 h-full transition-all duration-300",
-                location.pathname === item.path ? "text-sage-dark scale-105" : "text-ink/40 hover:text-ink/60"
-              )}
-            >
-              <div className={cn(
-                "p-2 rounded-full transition-colors duration-300",
-                location.pathname === item.path ? "bg-sage/10" : "bg-transparent"
-              )}>
-                <item.icon className={cn("w-5 h-5", location.pathname === item.path && "fill-sage/10")} />
-              </div>
-              <span className="text-[10px] font-medium tracking-wide">{item.name}</span>
-            </Link>
-          ))}
-        </div>
-      </nav>
+      {!shouldHideMenu && (
+        <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-cream/90 backdrop-blur-xl border-t border-sage/10 z-[100] safe-bottom">
+          <div className="flex justify-around items-center h-20 px-2">
+            {bottomNavItems.map((item) => (
+              <Link
+                key={item.path}
+                to={item.path}
+                className={cn(
+                  "flex flex-col items-center justify-center space-y-1.5 flex-1 h-full transition-all duration-300",
+                  location.pathname === item.path ? "text-sage-dark scale-105" : "text-ink/40 hover:text-ink/60"
+                )}
+              >
+                <div className={cn(
+                  "p-2 rounded-full transition-colors duration-300",
+                  location.pathname === item.path ? "bg-sage/10" : "bg-transparent"
+                )}>
+                  <item.icon className={cn("w-5 h-5", location.pathname === item.path && "fill-sage/10")} />
+                </div>
+                <span className="text-[10px] font-medium tracking-wide">{item.name}</span>
+              </Link>
+            ))}
+          </div>
+        </nav>
+      )}
 
       <footer className="bg-cream border-t border-sage/10 py-16 mt-20 hidden md:block">
         <div className="max-w-7xl mx-auto px-4 text-center">

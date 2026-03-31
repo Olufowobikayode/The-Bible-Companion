@@ -24,26 +24,53 @@ export default function Friends() {
   const [following, setFollowing] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'brethren' | 'followers' | 'following'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'brethren' | 'followers' | 'following' | 'search'>(initialTab as any);
   const [user, setUser] = useState<any>(null);
 
   useEffect(() => {
+    if (activeTab !== 'search') return;
+    
+    const delayDebounceFn = setTimeout(async () => {
+      if (!searchQuery) {
+        setUsers([]);
+        return;
+      }
+      setLoading(true);
+      try {
+        const usersData = await api.get(`/api/users/search?q=${encodeURIComponent(searchQuery)}`);
+        setUsers(usersData);
+      } catch (error) {
+        console.error("Error searching users:", error);
+      } finally {
+        setLoading(false);
+      }
+    }, 500);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchQuery, activeTab]);
+
+  useEffect(() => {
     const fetchData = async () => {
+      if (activeTab === 'search') return; // Handled by the other useEffect
+      
       setLoading(true);
       try {
         const { data: { session } } = await supabase.auth.getSession();
         setUser(session?.user ?? null);
 
         let usersData: UserProfile[] = [];
-        if (activeTab === 'brethren') {
-          usersData = await api.get('/api/users/brethren');
-        } else if (activeTab === 'followers') {
-          usersData = await api.get(`/api/users/${session?.user?.id}/followers`);
-        } else if (activeTab === 'following') {
-          usersData = await api.get(`/api/users/${session?.user?.id}/following`);
-        } else {
-          usersData = await api.get('/api/users/search?q=');
+        const uidToFetch = targetUid || session?.user?.id;
+
+        if (uidToFetch) {
+          if (activeTab === 'brethren') {
+            usersData = await api.get(`/api/users/${uidToFetch}/brethren`);
+          } else if (activeTab === 'followers') {
+            usersData = await api.get(`/api/users/${uidToFetch}/followers`);
+          } else if (activeTab === 'following') {
+            usersData = await api.get(`/api/users/${uidToFetch}/following`);
+          }
         }
+        
         setUsers(usersData);
 
         if (session?.user) {
@@ -58,7 +85,7 @@ export default function Friends() {
     };
 
     fetchData();
-  }, [activeTab]);
+  }, [activeTab, targetUid]);
 
   const handleAddFriend = async (friendUid: string) => {
     if (!user) {
@@ -80,6 +107,11 @@ export default function Friends() {
     try {
       await api.post(`/api/unfollow`, { targetId: friendUid });
       setFollowing(prev => prev.filter(id => id !== friendUid));
+      
+      if (!targetUid && (activeTab === 'following' || activeTab === 'brethren')) {
+        setUsers(prev => prev.filter(u => u.uid !== friendUid));
+      }
+      
       toast.success("Unfollowed user");
     } catch (error) {
       console.error("Error unfollowing user:", error);
@@ -116,11 +148,12 @@ export default function Friends() {
         <Search className="absolute left-3 top-3.5 w-4 h-4 text-ink/40" />
       </div>
 
-      <div className="flex justify-center gap-4 mb-12">
+      <div className="flex justify-center gap-4 mb-12 flex-wrap">
         {[
           { id: 'brethren', label: 'All Brethren' },
           { id: 'followers', label: 'Followers' },
-          { id: 'following', label: 'Following' }
+          { id: 'following', label: 'Following' },
+          { id: 'search', label: 'Find Users' }
         ].map(tab => (
           <button
             key={tab.id}

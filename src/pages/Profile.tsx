@@ -43,6 +43,8 @@ export default function Profile() {
     photoURL: ''
   });
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   
   // Dashboard state
   const [stats, setStats] = useState<any>(null);
@@ -166,6 +168,21 @@ export default function Profile() {
       toast.error("Failed to update profile.");
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    setIsDeleting(true);
+    try {
+      await api.delete('/api/users/me');
+      await supabase.auth.signOut();
+      toast.success("Account deleted successfully.");
+      navigate('/');
+    } catch (error) {
+      console.error("Error deleting account:", error);
+      toast.error("Failed to delete account.");
+      setIsDeleting(false);
+      setIsDeleteModalOpen(false);
     }
   };
 
@@ -562,20 +579,65 @@ export default function Profile() {
                 </div>
               </div>
 
+              <div className="flex flex-col gap-4 pt-4">
+                <div className="flex gap-4">
+                  <button
+                    onClick={() => setIsEditModalOpen(false)}
+                    className="flex-1 px-8 py-4 rounded-2xl font-bold text-ink/40 hover:bg-cream transition-all"
+                    disabled={isSaving}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveProfile}
+                    disabled={isSaving}
+                    className="flex-1 bg-sage text-white px-8 py-4 rounded-2xl font-bold hover:bg-sage-dark transition-all disabled:opacity-50 shadow-lg shadow-sage/20"
+                  >
+                    {isSaving ? 'Saving...' : 'Save Changes'}
+                  </button>
+                </div>
+                <div className="border-t border-sage/10 pt-4 mt-2">
+                  <button
+                    onClick={() => setIsDeleteModalOpen(true)}
+                    className="w-full bg-red-50 text-red-600 px-8 py-4 rounded-2xl font-bold hover:bg-red-100 transition-all"
+                  >
+                    Delete Account
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Delete Account Confirmation Modal */}
+      <AnimatePresence>
+        {isDeleteModalOpen && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[110] p-4 sm:p-6">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-white rounded-[2.5rem] p-8 sm:p-10 max-w-md w-full shadow-2xl space-y-6"
+            >
+              <h2 className="serif text-3xl font-bold text-red-600">Delete Account?</h2>
+              <p className="text-ink/70 leading-relaxed">
+                Are you sure you want to delete your account? This action cannot be undone and will permanently delete all your posts, prayers, testimonies, and activities.
+              </p>
               <div className="flex gap-4 pt-4">
                 <button
-                  onClick={() => setIsEditModalOpen(false)}
-                  className="flex-1 px-8 py-4 rounded-2xl font-bold text-ink/40 hover:bg-cream transition-all"
-                  disabled={isSaving}
+                  onClick={() => setIsDeleteModalOpen(false)}
+                  className="flex-1 px-6 py-3 rounded-2xl font-bold text-ink/40 hover:bg-cream transition-all"
+                  disabled={isDeleting}
                 >
                   Cancel
                 </button>
                 <button
-                  onClick={handleSaveProfile}
-                  disabled={isSaving}
-                  className="flex-1 bg-sage text-white px-8 py-4 rounded-2xl font-bold hover:bg-sage-dark transition-all disabled:opacity-50 shadow-lg shadow-sage/20"
+                  onClick={handleDeleteAccount}
+                  disabled={isDeleting}
+                  className="flex-1 bg-red-600 text-white px-6 py-3 rounded-2xl font-bold hover:bg-red-700 transition-all disabled:opacity-50 shadow-lg shadow-red-600/20"
                 >
-                  {isSaving ? 'Saving...' : 'Save Changes'}
+                  {isDeleting ? 'Deleting...' : 'Yes, Delete'}
                 </button>
               </div>
             </motion.div>

@@ -1,8 +1,8 @@
 import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { api } from '../../lib/api';
-import { useEffect, useState } from 'react';
-import { Trash2, MessageSquare, Loader2, Sparkles } from 'lucide-react';
+import { useEffect, useState, useRef } from 'react';
+import { Trash2, MessageSquare, Loader2, Sparkles, Send } from 'lucide-react';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
 
@@ -26,6 +26,19 @@ export default function ForumList() {
   const [messages, setMessages] = useState<any[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [user, setUser] = useState<any>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior, block: 'end' });
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'live') {
+      scrollToBottom('auto');
+    }
+  }, [messages, activeTab]);
 
   useEffect(() => {
     const fetchForums = async () => {
@@ -97,6 +110,17 @@ export default function ForumList() {
     } catch (error) {
       console.error("Error sending message:", error);
       toast.error("Failed to send message");
+    }
+  };
+
+  const handleDeleteMessage = async (id: string) => {
+    try {
+      await api.delete(`/api/forum/messages/${id}`);
+      setMessages(prev => prev.filter(m => m.id !== id));
+      toast.success('Message deleted');
+    } catch (error) {
+      console.error('Error deleting message:', error);
+      toast.error('Failed to delete message');
     }
   };
 
@@ -235,32 +259,47 @@ export default function ForumList() {
           </div>
         </>
       ) : (
-        <div className="bg-white p-6 sm:p-8 rounded-[2.5rem] border border-sage/10 shadow-sm mx-4 sm:mx-0">
-          <h2 className="serif text-2xl font-semibold text-sage-dark mb-6">Live Fellowship</h2>
-          <div className="h-[500px] overflow-y-auto mb-6 space-y-4 pr-2">
-            {messages.map((msg) => (
-              <div key={msg.id} className={`p-4 rounded-2xl ${msg.senderId === user?.id ? 'bg-sage text-white ml-auto max-w-[80%]' : 'bg-sage-light/20 text-ink mr-auto max-w-[80%]'}`}>
-                <div className="flex items-center justify-between mb-1 gap-4">
-                  <Link to={`/profile/${msg.senderId}`} className="text-[10px] font-bold uppercase tracking-widest opacity-70 hover:underline block cursor-pointer">{msg.senderName}</Link>
-                  <span className="text-[8px] opacity-50">{new Date(msg.createdAt).toLocaleTimeString()}</span>
+      <div className="bg-white p-4 sm:p-6 rounded-[2rem] border border-sage/10 shadow-sm mx-4 sm:mx-0 flex flex-col h-[600px]">
+          <h2 className="serif text-xl font-semibold text-sage-dark mb-4 px-2">Live Fellowship</h2>
+          <div className="flex-grow overflow-y-auto mb-4 space-y-4 pr-2 scroll-smooth overscroll-contain">
+            {messages.map((msg) => {
+              const isMe = msg.senderId === user?.id;
+              return (
+                <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'} group relative`}>
+                  <div className={`relative p-3 px-4 rounded-2xl max-w-[85%] ${isMe ? 'bg-sage text-white rounded-tr-none' : 'bg-sage-light/20 text-ink rounded-tl-none'}`}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <Link to={`/profile/${msg.senderId}`} className={`text-[10px] font-bold uppercase tracking-widest ${isMe ? 'text-white/70' : 'text-sage-dark/70'} hover:underline block cursor-pointer`}>{msg.senderName}</Link>
+                      <span className={`text-[8px] ${isMe ? 'text-white/50' : 'text-ink/40'}`}>{new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                    </div>
+                    <p className="text-sm leading-relaxed">{msg.text}</p>
+                    {(user?.id === msg.senderId || isAdmin) && (
+                      <button
+                        onClick={() => handleDeleteMessage(msg.id)}
+                        className={`absolute ${isMe ? '-left-8' : '-right-8'} top-1/2 -translate-y-1/2 p-1.5 text-red-500 hover:text-red-700 transition-opacity opacity-0 group-hover:opacity-100 bg-white/80 rounded-full shadow-sm`}
+                        title="Delete message"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <p className="text-sm">{msg.text}</p>
-              </div>
-            ))}
+              );
+            })}
             {messages.length === 0 && (
               <div className="text-center py-20 text-ink/40 italic">No messages yet. Start the fellowship!</div>
             )}
+            <div ref={messagesEndRef} className="h-px w-full shrink-0 overflow-anchor-none" />
           </div>
-          <form onSubmit={handleSendMessage} className="flex gap-2 bg-sage-light/20 p-2 rounded-2xl">
+          <form onSubmit={handleSendMessage} className="flex gap-2 bg-sage-light/10 p-2 rounded-2xl border border-sage/10">
             <input
               type="text"
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
-              placeholder="Share a word of encouragement..."
-              className="flex-grow p-4 bg-transparent focus:outline-none text-sm"
+              placeholder="Message..."
+              className="flex-grow p-3 bg-transparent focus:outline-none text-sm"
             />
-            <button type="submit" className="bg-sage text-white p-4 rounded-xl hover:bg-sage-dark transition-colors">
-              <MessageSquare size={20} />
+            <button type="submit" className="bg-sage text-white p-3 rounded-xl hover:bg-sage-dark transition-colors">
+              <Send size={18} />
             </button>
           </form>
         </div>

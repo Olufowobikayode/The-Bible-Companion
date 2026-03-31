@@ -33,6 +33,15 @@ body {
   color: var(--color-ink);
   font-family: var(--font-sans);
   -webkit-tap-highlight-color: transparent;
+  -webkit-overflow-scrolling: touch;
+}
+
+.scroll-smooth {
+  scroll-behavior: smooth;
+}
+
+.overflow-anchor-none {
+  overflow-anchor: none;
 }
 
 .serif {

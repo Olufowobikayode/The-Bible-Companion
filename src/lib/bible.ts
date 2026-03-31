@@ -57,6 +57,53 @@ const TRANSLATION_MAP: Record<string, string> = {
   'The Message': 'web' // Fallback
 };
 
+export const fetchRandomVerse = async () => {
+  const randomVerses = [
+    "Matthew 18:20",
+    "Philippians 4:6",
+    "1 Thessalonians 5:17",
+    "James 5:16",
+    "Romans 8:26",
+    "Ephesians 6:18",
+    "Colossians 4:2",
+    "Hebrews 4:16",
+    "1 John 5:14",
+    "Psalm 145:18",
+    "Isaiah 40:31",
+    "Matthew 6:6",
+    "Psalm 5:3",
+    "Psalm 34:17",
+    "Psalm 55:22",
+    "Psalm 62:8",
+    "Psalm 107:28",
+    "Proverbs 15:29",
+    "Jeremiah 29:12",
+    "Matthew 7:7",
+    "Matthew 21:22",
+    "Mark 11:24",
+    "Luke 11:9",
+    "Luke 18:1",
+    "John 14:13",
+    "John 15:7",
+    "Acts 1:14",
+    "Acts 12:5",
+    "Romans 12:12",
+    "2 Corinthians 1:11",
+    "Ephesians 3:20",
+    "Philippians 4:7",
+    "Colossians 4:3",
+    "1 Timothy 2:1",
+    "James 4:8",
+    "James 5:13",
+    "1 Peter 4:7",
+    "1 Peter 5:7",
+    "1 John 3:22",
+    "Jude 1:20"
+  ];
+  const randomRef = randomVerses[Math.floor(Math.random() * randomVerses.length)];
+  return fetchBibleVerse(randomRef);
+};
+
 export const fetchBibleVerse = async (reference: string, translation: string = 'KJV') => {
   try {
     const apiTranslation = TRANSLATION_MAP[translation] || 'kjv';

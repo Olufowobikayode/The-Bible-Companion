@@ -158,6 +158,17 @@ export default function Testimonies() {
     }
   };
 
+  const handleDeleteComment = async (testimonyId: string, commentId: string) => {
+    try {
+      await api.delete(`/api/testimonies/${testimonyId}/comments/${commentId}`);
+      setComments(prev => prev.filter(c => c.id !== commentId));
+      toast.success("Comment deleted.");
+    } catch (error) {
+      console.error("Error deleting comment:", error);
+      toast.error("Failed to delete comment.");
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTestimony.trim() || !user) return;
@@ -362,15 +373,26 @@ export default function Testimonies() {
                           <div className="w-8 h-8 rounded-xl bg-sage-light/50 flex items-center justify-center text-xs font-bold text-sage shrink-0">
                             {comment.authorName?.[0] || 'U'}
                           </div>
-                          <div className="flex-grow">
+                          <div className="flex-grow group/comment relative">
                             <div className="bg-cream/30 p-4 rounded-2xl border border-sage/5">
                               <p className="text-sm text-ink/80">{comment.content}</p>
                             </div>
-                            <div className="flex items-center gap-2 mt-1 px-2">
-                              <span className="text-[10px] font-bold text-sage-dark">{comment.authorName}</span>
-                              <span className="text-[10px] text-ink/20 uppercase tracking-widest">
-                                {comment.createdAt?.toDate?.() ? comment.createdAt.toDate().toLocaleString() : 'Just now'}
-                              </span>
+                            <div className="flex items-center justify-between mt-1 px-2">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-bold text-sage-dark">{comment.authorName}</span>
+                                <span className="text-[10px] text-ink/20 uppercase tracking-widest">
+                                  {comment.createdAt?.toDate?.() ? comment.createdAt.toDate().toLocaleString() : 'Just now'}
+                                </span>
+                              </div>
+                              {(isAdmin || (user && user.id === comment.authorUid)) && (
+                                <button
+                                  onClick={() => handleDeleteComment(testimony.id, comment.id)}
+                                  className="text-[10px] text-destructive/40 hover:text-destructive opacity-0 group-hover/comment:opacity-100 transition-opacity"
+                                  title="Delete Comment"
+                                >
+                                  Delete
+                                </button>
+                              )}
                             </div>
                           </div>
                         </div>

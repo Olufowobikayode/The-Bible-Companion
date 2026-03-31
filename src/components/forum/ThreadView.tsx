@@ -187,33 +187,22 @@ export default function ThreadView() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto px-0 sm:px-4 py-6 sm:py-12">
-      <div className="mb-8 px-4 sm:px-0 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <Link to={`/forum/${forumId}`} className="text-sage hover:text-sage-dark mb-4 inline-flex items-center gap-2 text-sm font-medium transition-colors">
-            <ChevronLeft size={18} />
-            Back to Threads
-          </Link>
-          <h1 className="serif text-3xl sm:text-4xl font-semibold text-sage-dark">Discussion</h1>
-        </div>
-        <button
-          onClick={handleSummarize}
-          disabled={isSummarizing || posts.length === 0}
-          className="bg-sage-light/20 text-sage-dark border border-sage/20 px-4 py-2 rounded-xl font-medium hover:bg-sage-light transition-colors flex items-center gap-2 disabled:opacity-50 text-sm"
-        >
-          {isSummarizing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-          Summarize Thread
-        </button>
+    <div className="max-w-3xl mx-auto px-4 py-6">
+      <div className="mb-6 flex items-center gap-4">
+        <Link to={`/forum/${forumId}`} className="text-sage hover:text-sage-dark p-2 rounded-full hover:bg-sage/10 transition-colors">
+          <ChevronLeft size={24} />
+        </Link>
+        <h1 className="serif text-2xl font-semibold text-sage-dark">Discussion</h1>
       </div>
 
       {summary && (
         <motion.div 
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-8 mx-4 sm:mx-0 bg-sage-light/30 p-6 rounded-3xl border border-sage/20"
+          className="mb-6 bg-sage-light/10 p-4 rounded-2xl border border-sage/10"
         >
-          <h3 className="serif text-xl font-semibold text-sage-dark mb-3 flex items-center gap-2">
-            <Sparkles className="w-5 h-5" />
+          <h3 className="text-sm font-semibold text-sage-dark mb-2 flex items-center gap-2">
+            <Sparkles className="w-4 h-4" />
             AI Summary
           </h3>
           <div className="prose prose-sage prose-sm max-w-none text-ink/80">

@@ -15,22 +15,44 @@ export const api = {
     const headers = await getHeaders();
     const fullPath = path.startsWith('/api') ? path : `${API_BASE}${path}`;
     console.log('Fetching:', fullPath);
-    const res = await fetch(fullPath, {
-      ...options,
-      headers: { ...headers, ...options.headers }
-    });
+    
+    try {
+      const res = await fetch(fullPath, {
+        cache: 'no-store',
+        ...options,
+        headers: { ...headers, ...options.headers }
+      });
 
-    if (res.status === 429 && retries > 0) {
-      await new Promise(resolve => setTimeout(resolve, 2000 * (4 - retries)));
-      return this.request(path, options, retries - 1);
-    }
+      if (res.status === 429 && retries > 0) {
+        console.warn(`Rate limited (429). Retrying in 2s... (${retries} retries left)`);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        return this.request(path, options, retries - 1);
+      }
 
-    if (!res.ok) {
-      const text = await res.text();
-      const statusText = res.statusText || `Status ${res.status}`;
-      throw new Error(`API Error: ${statusText} - ${text}`);
+      if (!res.ok) {
+        const text = await res.text();
+        let errorMessage = `API Error: ${res.status} ${res.statusText}`;
+        try {
+          const json = JSON.parse(text);
+          if (json.error) errorMessage += ` - ${json.error}`;
+        } catch (e) {
+          if (text) errorMessage += ` - ${text}`;
+        }
+        throw new Error(errorMessage);
+      }
+      
+      return res.json();
+    } catch (error: any) {
+      if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
+        if (retries > 0) {
+          console.warn(`Network error (Failed to fetch). Retrying in 1s... (${retries} retries left)`);
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          return this.request(path, options, retries - 1);
+        }
+        throw new Error('Network error: Could not reach the server. Please check your connection.');
+      }
+      throw error;
     }
-    return res.json();
   },
 
   async get(path: string) {
